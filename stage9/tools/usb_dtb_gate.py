@@ -95,7 +95,8 @@ def find_usb(root: Node) -> tuple[dict[int, dict], dict[int, dict], list]:
         if is_dwc and address in KNOWN_BASES:
             if address in dwc:
                 raise ValueError(f"Multiple DWC3 nodes at {address:#x}")
-            wrapper_addr = reg_start(parent, ancestors[-1]) if ancestors else None
+            # Parent's reg tuple is encoded using *its* parent cell widths.
+            wrapper_addr = reg_start(parent, ancestors[-2]) if len(ancestors) >= 2 else None
             dwc[address] = {
                 "path": path, "active": effective_status(node, ancestors),
                 "mode": (strings(node.props.get("dr_mode")) or ["unspecified"])[0],
