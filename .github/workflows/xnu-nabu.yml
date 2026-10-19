@@ -88,6 +88,19 @@ jobs:
           mkdir -p ../xnu/out
           bash build.sh 2>&1 | tee ../xnu/out/build.log
 
+      - name: Validate resulting ARM64 Mach-O kernel (offline)
+        shell: bash
+        run: |
+          set -euo pipefail
+          KERNEL=dxb/fakeroot/System/Library/Kernels/kernel.development.nabu
+          test -s "$KERNEL"
+          file "$KERNEL"
+          xcrun lipo -archs "$KERNEL" | tee xnu/out/kernel-architectures.txt
+          grep -qw arm64 xnu/out/kernel-architectures.txt
+          xcrun otool -hv "$KERNEL" | tee xnu/out/macho-header.txt
+          python3 stage4/tools/inspect_kernel.py "$KERNEL" --out xnu/out/macho-report.json
+          shasum -a 256 "$KERNEL" > xnu/out/validated-kernel-sha256.txt
+
       - name: Collect build status (no kernel or proprietary binaries)
         if: always()
         shell: bash
@@ -113,6 +126,10 @@ jobs:
           name: nabu-xnu-compile-diagnostics
           path: |
             xnu/out/staged-patches.json
+            xnu/out/kernel-architectures.txt
+            xnu/out/macho-header.txt
+            xnu/out/macho-report.json
+            xnu/out/validated-kernel-sha256.txt
             xnu/out/build-tail.txt
             xnu/out/kernel-sha256.txt
             xnu/out/DO_NOT_FLASH.txt
