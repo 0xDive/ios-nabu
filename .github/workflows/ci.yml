@@ -30,10 +30,23 @@ jobs:
         run: python3 -m unittest discover -s stage4/tests -v
       - name: Stage 6 native FDT memory audit tests
         run: python3 -m unittest discover -s stage6/tests -v
+      - name: Stage 7 read-only UART inventory tests (no ADB or hardware)
+        run: python3 -m unittest discover -s stage7/tests -v
       - name: Offline Mach-O/DTB layout tests
         run: python3 -m unittest discover -s tools/tests -v
       - name: XNU staging, boot_args and Stage 5 handoff tests
         run: python3 -m unittest discover -s xnu/tests -v
+      - name: Publish Stage 7 host-only UART inspection tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: nabu-stage7-uart-readonly-tools
+          path: |
+            stage7/tools/uart_dtb.py
+            stage7/tools/adb_uart_readonly.py
+            stage7/README.md
+            stage4/tools/dtb_inspect.py
+          if-no-files-found: error
+          retention-days: 7
 
   arm64:
     name: Cross-compile Stage 3 test shim
