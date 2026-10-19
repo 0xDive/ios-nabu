@@ -28,7 +28,9 @@ jobs:
         run: python3 -m unittest discover -s stage3/tests -v
       - name: Stage 4 Python unit tests
         run: python3 -m unittest discover -s stage4/tests -v
-      - name: XNU upstream preparation unit tests
+      - name: Offline Mach-O/DTB layout tests
+        run: python3 -m unittest discover -s tools/tests -v
+      - name: XNU staging and ADT contract tests
         run: python3 -m unittest discover -s xnu/tests -v
 
   arm64:
