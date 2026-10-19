@@ -132,7 +132,7 @@ struct nabu_memory_report nabu_memory_probe(
     /* /memreserve entries are pairs (u64 addr, u64 size), terminating 0/0. */
     int reserve_ended = 0;
     uint32_t pos = off_rsvmap;
-    for (uint32_t i = 0; i < 4096 && off_struct - pos >= 16U; ++i) {
+    for (uint32_t i = 0; i < 4096 && pos <= off_struct && off_struct - pos >= 16U; ++i) {
         uint64_t addr = u64be(f + pos), size = u64be(f + pos + 8);
         pos += 16;
         if (!addr && !size) {
