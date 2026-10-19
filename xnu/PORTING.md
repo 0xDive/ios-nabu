@@ -29,13 +29,13 @@ See [include/nabu_hw.h](include/nabu_hw.h). Eight CPU nodes, PSCI 1.0 via SMC, G
 ## First XNU-specific milestones
 
 1. Pin upstream references and verify that all needed patches may legally be used and modified.
-2. Make a minimal `NABU` build target, no framebuffer, UFS, touch or userland.
-3. Compile raw ARM64 XNU Mach-O in a macOS workflow and inspect segments/entry/relocations offline.
+2. **Done for host compilation only:** create a `NABU` machine identifier in the pinned experimental patch set; device-driver behavior is still not validated.
+3. **Done for host compilation only:** build `kernel.development.nabu`, ARM64 Mach-O, 19 segments, entry VA `0xFFFFFE000748B488`, chained fixups absent. [Passing CI run](https://github.com/0xDive/ios-nabu/actions/runs/39295105141).
 4. Establish a trustworthy diagnostic channel and prove bootloader-time free memory before doing kernel relocation.
-5. Prepare a versioned `boot_args` and complete ADT that matches the kernel build. Use one CPU.
+5. **Partial:** offline `boot_args` Revision 2 / Version 2 serializer and preliminary ADT are implemented, but not validated on hardware; complete a runtime-correct ADT and use a single boot CPU.
 6. Only then consider a temporary fastboot image that transfers control to XNU.
 
-**Not done yet:** an adapted or compiled NABU XNU kernel, kernel-entry hardware trace, iOS userland launch, touch/display operation or an installable image.
+**Not done yet:** an independently hardware-adapted NABU kernel, a verified XNU entry on nabu, reliable early logging, iOS userland launch, touch/display operation, or an installable image. The host-compiled Mach-O is not a functional port.
 
 ## Safety
 
