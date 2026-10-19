@@ -20,6 +20,7 @@ The project explores booting an ARM64 XNU kernel on nabu, using a minimal ABL-co
 | Stage 4.9 — Mach-O/ADT/boot_args handoff plan | **Host-side passed** | [PR #9](https://github.com/0xDive/ios-nabu/pull/9) corrected XNU's 32 MiB virtual-base mapping; [PR #10](https://github.com/0xDive/ios-nabu/pull/10) added an offline-only manifest of segment copy/BSS operations and ABI checks. No executable payload. |
 | Stage 6 / 6.1 — ABL-time FDT memory probe | **Two approximate ~8-second autonomous resets, not a persistent log** | [PR #11](https://github.com/0xDive/ios-nabu/pull/11) implemented read-only static checks. [PR #14](https://github.com/0xDive/ios-nabu/pull/14) rejects missing fixed `/reserved-memory` and was retested on hardware: black screen and reset within roughly 8 seconds (timing uncertain). This is **not proof of writable kernel RAM**. |
 | Stage 7 — Qualcomm UART console discovery | **Host-side research only** | [Read-only DTB/ADB tools](stage7/README.md) inspect UART `0xA90000`, related clocks, IRQ 357 and GPIO85/86. No confirmed electrical access, working early UART, or XNU output. |
+| Stage 8 / 8.1 — U-Boot USB logging research | **Host-side compilation passed; no device test** | [PR #20](https://github.com/0xDive/ios-nabu/pull/20): SM8150 MTP U-Boot ARM64 reference. [PR #21](https://github.com/0xDive/ios-nabu/pull/21): same pinned U-Boot host-compiled as ARM64 ELF with public `xiaomi,nabu` DTB, confirmed by `fdtget` in [CI](https://github.com/0xDive/ios-nabu/actions/runs/39322222486). No verified USB PHY, Type-C, bootloader memory, early USB log or XNU boot. |
 | Stage 5 — actual XNU entry on nabu | **Not demonstrated** | Requires bootloader-time memory proof, trustworthy early logging, a reviewed loader, and platform hardware adaptations. |
 | iOS userland, graphics, touch, network | **Not implemented** | Requires much more platform and driver work. |
 
@@ -40,6 +41,7 @@ Based on a locally inspected user-provided Linux FDT (not uploaded to this repos
 - `stage4/` — offline-only DTB/ADT/Mach-O analysis tools (not a bootable OS).
 - `stage6/` — **read-only** bare-metal FDT RAM audit using timed PSCI reset outcomes; no XNU or writing to proposed kernel RAM.
 - `stage7/` — read-only UART topology analysis and optional Android sysfs/debugfs status; no bare-metal UART register writes.
+- `stage8/` — compile-only U-Boot USB logging experiments, with pinned public nabu Linux DTS and disabled flashing/OEM command options; [board compatibility limits](stage8/BOARD_GAPS.md).
 - `xnu/` — pinned macOS XNU compile experiment, preliminary ADT, ARM64 boot_args v2 and [Stage 5 offline handoff](xnu/STAGE5.md) planning tools; **nothing bootable**.
 - `docs/` — porting notes, safety limits, roadmap.
 - `.github/workflows/` — host-side Python tests and LLVM ARM64 build checks.
@@ -53,7 +55,7 @@ No Apple proprietary firmware, IPSW, decrypted system image, device dumps, keys,
 ## Immediate engineering tasks
 
 1. Add broader negative tests for malformed FDT, ADT, Mach-O and boot images; run Stage 3/4 tests and LLVM cross-compilation in GitHub Actions.
-2. Stage 6/6.1 shows approximate ~8-second automatic resets, but no execution trace; establish [a real early logging channel](docs/EARLY_CONSOLE.md) and independently verify bootloader-time RAM before loading XNU.
+2. Stage 8 host-built U-Boot (including nabu public DTB) offers a *possible* USB debugging architecture, **not a validated tablet boot**; verify [board-specific USB2 OTG, Type-C and RAM gates](stage8/BOARD_GAPS.md) and capture a real early log before any XNU device test.
 3. Replace the compile-only SWEET-to-NABU identifier transformation with independently reviewed SM8150 PlatformExpert, memory/MMU and device-specific code.
 4. Validate Mach-O structure and segment mapping offline before even considering a temporary boot.
 5. Bring up XNU in single-CPU diagnostic mode, then platform devices, storage, display and userland.
