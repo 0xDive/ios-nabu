@@ -1,0 +1,32 @@
+name: Offline validation
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repository-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check repository policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 --version
+          test -s README.md
+          test -s docs/ROADMAP.md
+          test -s docs/SAFETY.md
+          python3 tools/repository_guard.py
+
+  stage-source-tests:
+    if: false # Enable after audited stage3/stage4 sources are imported
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s stage3/tests -v
+      - run: python3 -m unittest discover -s stage4/tests -v
