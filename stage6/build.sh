@@ -13,10 +13,10 @@ common=(--target=aarch64-none-elf -ffreestanding -nostdlib -fno-builtin
     -fno-asynchronous-unwind-tables -fno-common -mstrict-align
     -mgeneral-regs-only -Wall -Wextra -Werror -O2
     -I ../stage3/src -I src)
-clang "\${common[@]}" -c ../stage3/src/entry.S -o out/entry.o
-clang "\${common[@]}" -c ../stage3/src/fdt_probe.c -o out/fdt_probe.o
-clang "\${common[@]}" -c src/memory_probe.c -o out/memory_probe.o
-clang "\${common[@]}" -c src/diag.c -o out/diag.o
+clang "${common[@]}" -c ../stage3/src/entry.S -o out/entry.o
+clang "${common[@]}" -c ../stage3/src/fdt_probe.c -o out/fdt_probe.o
+clang "${common[@]}" -c src/memory_probe.c -o out/memory_probe.o
+clang "${common[@]}" -c src/diag.c -o out/diag.o
 ld.lld --no-undefined --build-id=none -T ../stage3/src/link.ld \
     -o out/nabu-audit.elf \
     out/entry.o out/fdt_probe.o out/memory_probe.o out/diag.o
