@@ -63,6 +63,27 @@ class BootArgsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             make(src, adt(), 0x40000000)
 
+    def test_reject_unaligned_virtual_block(self):
+        src = layout()
+        src["virtual_base"] = hex(int(src["virtual_base"], 16) + 0x4000)
+        with self.assertRaisesRegex(ValueError, "32 MiB aligned"):
+            make(src, adt(), 0x40000000)
+
+    def test_reject_inconsistent_first_segment_physical(self):
+        src = layout()
+        virt = int(src["virtual_base"], 16)
+        src["first_segment_va"] = hex(virt + 0x1004000)
+        src["first_segment_physical"] = hex(0x100000000)
+        with self.assertRaisesRegex(ValueError, "contradicts"):
+            make(src, adt(), 0x40000000)
+
+    def test_accept_consistent_block_prefix(self):
+        src = layout()
+        virt = int(src["virtual_base"], 16)
+        src["first_segment_va"] = hex(virt + 0x1004000)
+        src["first_segment_physical"] = hex(0x100000000 + 0x1004000)
+        self.assertEqual(len(make(src, adt(), 0x40000000)), STRUCT_SIZE)
+
     def test_reject_misaligned_ram(self):
         src = layout()
         src["adt_physical"] = hex(0x100200001)
