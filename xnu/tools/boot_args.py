@@ -13,6 +13,10 @@ from pathlib import Path
 import struct
 import sys
 
+# Reuse the audited host-side Apple Device Tree parser.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "stage4" / "tools"))
+from adt_format import unpack as unpack_adt
+
 BASE_OFFSET = 8
 VIDEO_OFFSET = 40
 MACHINE_TYPE_OFFSET = 88
@@ -50,14 +54,29 @@ def make(layout, adt_bytes, ram_size, cmdline="cpus=1 -v"):
         raise ValueError("Use only the offline STATIC_ONLY layout report")
     if layout.get("runtime_free_verified") is not False:
         raise ValueError("Runtime memory claims cannot be inferred by this script")
+    if layout.get("static_no_known_collision") is not True:
+        raise ValueError("Static RAM collision checks have not passed")
     if not isinstance(adt_bytes, bytes) or not 0 < len(adt_bytes) <= MAX_ADT:
         raise ValueError("Invalid ADT length")
+    root = unpack_adt(adt_bytes)
+    if root.name != "device-tree" or not root.child("chosen"):
+        raise ValueError("Missing ADT root or chosen node")
+    compatibles = root.props.get("compatible", b"").split(bytes(1))
+    if not (b"xiaomi,nabu" in compatibles and b"qcom,sm8150" in compatibles):
+        raise ValueError("ADT must identify nabu / SM8150")
+    chosen = root.child("chosen")
+    chosen_base = chosen.props.get("dram-base", b"")
+    chosen_size = chosen.props.get("dram-size", b"")
+    if len(chosen_base) != 8 or len(chosen_size) != 8:
+        raise ValueError("ADT missing valid 64-bit DRAM bounds")
     phys = from_hex(layout.get("physical_base"), "physical_base")
     virt = from_hex(layout.get("virtual_base"), "virtual_base")
     adt_pa = from_hex(layout.get("adt_physical"), "adt_physical")
     args_pa = from_hex(layout.get("boot_args_physical"), "boot_args_physical")
     top = from_hex(layout.get("allocation_end_exclusive"), "allocation_end_exclusive")
     ram_size = bounded(ram_size, "ram_size")
+    if phys != struct.unpack("<Q", chosen_base)[0] or ram_size != struct.unpack("<Q", chosen_size)[0]:
+        raise ValueError("boot_args and ADT DRAM bounds must match")
     if not ram_size or phys % PAGE or adt_pa % PAGE or args_pa % PAGE or top % PAGE:
         raise ValueError("Physical addresses must be 16KiB aligned")
     if not phys <= adt_pa < args_pa < top <= phys + ram_size or top > U64_MAX:
