@@ -58,6 +58,23 @@ mainline board's High-Speed. This difference must be understood before
 choosing real PHY/clock setup. Neither DTS describes all live ABL/TrustZone
 allocations or proves that the Type-C role switch can be driven from U-Boot.
 
+## Stage 11 PM8150B Type-C and power audit
+
+[Stage 11](../stage11/README.md) checks the compiled public board DTB's
+USB1/PM8150B connector endpoint graph, three HS PHY supply LDO references,
+GCC clocks/resets/GDSC power domain, assigned reference rates and the shared
+PD-PHY 3.072 V rail. The pinned U-Boot source **does** include
+`qcom,pm8150b-vbus-reg`, but that is a **VBUS source driver**, not a
+PM8150B Type-C/CC/PD role driver. Its probe writes SPMI registers and should
+not be turned on to investigate a sink-mode USB connection blindly.
+
+The inspected U-Boot Type-C/TCPM and Qualcomm PMIC C sources have no
+`qcom,pm8150b-typec` match; `CONFIG_TYPEC_TCPM=n` in the checked host
+configuration. The HS PHY driver similarly does not explicitly request its
+three board-defined `vdda-*` supplies. These are engineering gaps, **not
+claims that the real hardware or rails are off**. See [passing CI](https://github.com/0xDive/ios-nabu/actions/runs/39330530075)
+and its `safe_to_boot=false` report.
+
 ## Gate before considering USB-based on-device debug
 
 1. **Partially completed:** compile public `qcom/sm8150-xiaomi-nabu` DTS and embed it in a host-built U-Boot ELF; **still required:** review U-Boot-specific DT properties and bootloader-time clock/PHY/pinctrl/regulator/Type-C driver operation without reusing MTP board hardware assumptions.
