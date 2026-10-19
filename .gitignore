@@ -1,0 +1,23 @@
+# Device-local/private inputs
+*.dtb
+*.dtbo
+*.img
+*.bin
+*.ipsw
+*.dmg
+*.im4p
+*.img4
+*.plist
+*nabu-hardware.json
+*nabu-hw-plan.json
+*dtb-summary.json
+*.log
+# Artifact outputs
+out/
+build/
+dist/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+.env
