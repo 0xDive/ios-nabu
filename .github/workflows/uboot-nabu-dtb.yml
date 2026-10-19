@@ -118,7 +118,38 @@ jobs:
             | tee stage8/out/nabu-compiled-compatible.txt
           grep -q 'xiaomi,nabu' stage8/out/nabu-compiled-compatible.txt
           grep -q 'qcom,sm8150' stage8/out/nabu-compiled-compatible.txt
-          echo 'DTS-only syntax/labels validated. No nabu U-Boot executable built.'
+          echo 'Public nabu DTS syntax/labels validated; USB/PMIC behavior untested.'
+      - name: Compile U-Boot ARM64 with only prevalidated nabu DTB (NEVER BOOT)
+        run: |
+          set -euo pipefail
+          SRC="$GITHUB_WORKSPACE/_nabu_uboot"
+          BUILD="$GITHUB_WORKSPACE/_nabu_uboot_build"
+          # Default U-Boot dts/Makefile builds ALL upstream Qualcomm DTBs,
+          # many of which are incompatible with the pinned nabu SoC DTSI.
+          # Host-only one-board experiment: use the previously validated
+          # nabu binary DTB instead. The Makefile tweak is NOT committed
+          # to upstream or presented as device-ready firmware.
+          grep -Fq '$(DTB): arch-dtbs $(local_dtbos)' "$SRC/dts/Makefile"
+          sed -i 's/$(DTB): arch-dtbs $(local_dtbos)/$(DTB): $(local_dtbos)/' \
+            "$SRC/dts/Makefile"
+          mkdir -p "$BUILD/dts/upstream/src/arm64/qcom"
+          cp "$BUILD/nabu-public-source-only.dtb" \
+            "$BUILD/dts/upstream/src/arm64/qcom/sm8150-xiaomi-nabu.dtb"
+          if ! make -C "$SRC" O="$BUILD" -j4 DEVICE_TREE="$DEVICE_TREE" \
+                > stage8/out/nabu-uboot-compile.log 2>&1; then
+            tail -n 120 stage8/out/nabu-uboot-compile.log
+            exit 1
+          fi
+          test -s "$BUILD/u-boot"
+          test -s "$BUILD/u-boot.dtb"
+          file "$BUILD/u-boot" | tee stage8/out/nabu-uboot-filetype.txt
+          grep -Eq 'ARM aarch64|ARM64|aarch64' stage8/out/nabu-uboot-filetype.txt
+          fdtget -t s "$BUILD/u-boot.dtb" / compatible \
+            | tee stage8/out/nabu-integrated-compatible.txt
+          grep -q 'xiaomi,nabu' stage8/out/nabu-integrated-compatible.txt
+          sha256sum "$BUILD/u-boot" | awk '{print $1 "  host-only U-Boot ELF (not distributed)"}' \
+            > stage8/out/nabu-uboot-elf-sha256.txt
+          echo 'Compiled ELF with nabu DTB: NOT VERIFIED ON HARDWARE.'
       - name: Collect diagnostics and disclaimers
         if: always()
         run: |
@@ -129,7 +160,13 @@ jobs:
           else
             echo 'Build did not start.' > stage8/out/nabu-dts-compile-tail.txt
           fi
-          printf 'Public Linux DTS compilation only. No memory/PHY/USB validation. DO NOT BOOT OR FLASH.\n' \
+          if [ -f stage8/out/nabu-uboot-compile.log ]; then
+            tail -n 120 stage8/out/nabu-uboot-compile.log \
+              > stage8/out/nabu-uboot-compile-tail.txt
+          else
+            echo 'U-Boot ELF assembly did not start.' > stage8/out/nabu-uboot-compile-tail.txt
+          fi
+          printf 'Host-only Linux nabu DTS / U-Boot ELF. No memory/PHY/USB validation. DO NOT BOOT OR FLASH.\n' \
             > stage8/out/NO_DEVICE_TEST.txt
       - name: Upload sanitized metadata only, no executable or DTB
         if: always()
@@ -142,6 +179,10 @@ jobs:
             stage8/out/nabu-dtb-uboot-config.json
             stage8/out/nabu-compiled-compatible.txt
             stage8/out/nabu-dts-compile-tail.txt
+            stage8/out/nabu-integrated-compatible.txt
+            stage8/out/nabu-uboot-filetype.txt
+            stage8/out/nabu-uboot-elf-sha256.txt
+            stage8/out/nabu-uboot-compile-tail.txt
             stage8/out/NO_DEVICE_TEST.txt
           if-no-files-found: warn
           retention-days: 7
