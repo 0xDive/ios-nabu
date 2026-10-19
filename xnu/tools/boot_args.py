@@ -28,6 +28,7 @@ FLAGS_OFFSET = 720
 MEMORY_ACTUAL_OFFSET = 728
 STRUCT_SIZE = 736
 PAGE = 0x4000
+XNU_L2_BLOCK = 0x2000000  # ARM64 XNU handoff block base alignment
 MAX_ADT = 8 * 1024 * 1024
 U64_MAX = (1 << 64) - 1
 
@@ -71,6 +72,18 @@ def make(layout, adt_bytes, ram_size, cmdline="cpus=1 -v"):
         raise ValueError("ADT missing valid 64-bit DRAM bounds")
     phys = from_hex(layout.get("physical_base"), "physical_base")
     virt = from_hex(layout.get("virtual_base"), "virtual_base")
+    # The Mach-O __TEXT VA is not an XNU virtBase. start.s on the
+    # research build uses the 32 MiB-aligned L2 block address instead.
+    if virt % XNU_L2_BLOCK or phys % XNU_L2_BLOCK:
+        raise ValueError("XNU virtBase and physBase must be 32 MiB aligned")
+    if "first_segment_va" in layout:
+        text_va = from_hex(layout["first_segment_va"], "first_segment_va")
+        if not virt <= text_va < virt + XNU_L2_BLOCK:
+            raise ValueError("First Mach-O segment not in virtBase L2 block")
+        if "first_segment_physical" in layout:
+            observed = from_hex(layout["first_segment_physical"], "first_segment_physical")
+            if observed != phys + (text_va - virt):
+                raise ValueError("First segment physical address contradicts XNU virtBase")
     adt_pa = from_hex(layout.get("adt_physical"), "adt_physical")
     args_pa = from_hex(layout.get("boot_args_physical"), "boot_args_physical")
     top = from_hex(layout.get("allocation_end_exclusive"), "allocation_end_exclusive")
