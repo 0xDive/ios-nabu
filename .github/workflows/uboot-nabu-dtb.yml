@@ -58,7 +58,15 @@ jobs:
             -o "$DEST/sm8150-xiaomi-nabu.dts"
           curl -fsSL --retry 3 "$SOURCE/sm8150-wcd9340.dtsi" \
             -o "$DEST/sm8150-wcd9340.dtsi"
-          sha256sum "$DEST/sm8150-xiaomi-nabu.dts" "$DEST/sm8150-wcd9340.dtsi" \
+          # Bundled U-Boot v2026.07 DTSI is older than the published nabu
+          # Linux tree: pin the matching SoC and PMIC DTSI revisions too.
+          # These copies exist ONLY inside the ephemeral CI work tree.
+          for NAME in sm8150.dtsi pm8150.dtsi pm8150b.dtsi pm8150l.dtsi; do
+            curl -fsSL --retry 3 "$SOURCE/$NAME" -o "$DEST/$NAME"
+          done
+          sha256sum "$DEST/sm8150-xiaomi-nabu.dts" \
+            "$DEST/sm8150-wcd9340.dtsi" "$DEST/sm8150.dtsi" \
+            "$DEST/pm8150.dtsi" "$DEST/pm8150b.dtsi" "$DEST/pm8150l.dtsi" \
             | sed -E 's@.*/@@' > stage8/out/public-source-sha256.txt
           python3 stage8/tools/inspect_nabu_source.py \
             --source "$DEST/sm8150-xiaomi-nabu.dts" \
