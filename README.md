@@ -16,7 +16,8 @@ The project explores booting an ARM64 XNU kernel on nabu, using a minimal ABL-co
 | Stage 2.1 — bare-metal FDT + PSCI reset | **Observed** | Device reportedly rebooted without pressing buttons, approximately seven seconds after start. |
 | Stage 3 — payload in initrd, second-stage handoff | **Likely** | Device reportedly rebooted automatically after ~10 s; distinct failure path waits ~27 s. Timing is indicative, not a trace. |
 | Stage 4 — offline ADT draft and Mach-O inspection | **Host-side only** | Prototype tools and local tests; **no XNU boot image**. |
-| Stage 5 — actual XNU entry on nabu | **Not started / not demonstrated** | Requires adapted kernel, memory placement, boot_args, logging. |
+| Stage 4.5 — compile XNU for NABU | **Host-side passed** | [macOS GitHub Actions](https://github.com/0xDive/ios-nabu/actions/runs/39295105141) produced `kernel.development.nabu`; ARM64 Mach-O with 19 segments, valid entry VA `0xFFFFFE000748B488`, no chained fixups. **Not tested on device.** |
+| Stage 5 — actual XNU entry on nabu | **Not demonstrated** | Requires bootloader-time memory proof, trustworthy early logging, a reviewed loader, and platform hardware adaptations. |
 | iOS userland, graphics, touch, network | **Not implemented** | Requires much more platform and driver work. |
 
 ## Hardware observations
@@ -34,6 +35,7 @@ Based on a locally inspected user-provided Linux FDT (not uploaded to this repos
 
 - `stage3/` — conservative diagnostic ABL shim + separate ARM64 payload from Android ramdisk.
 - `stage4/` — offline-only DTB/ADT/Mach-O analysis tools (not a bootable OS).
+- `xnu/` — pinned macOS XNU compile experiment, preliminary ADT and ARM64 boot_args v2 tooling; **nothing bootable**.
 - `docs/` — porting notes, safety limits, roadmap.
 - `.github/workflows/` — host-side Python tests and LLVM ARM64 build checks.
 
@@ -47,7 +49,7 @@ No Apple proprietary firmware, IPSW, decrypted system image, device dumps, keys,
 
 1. Add broader negative tests for malformed FDT, ADT, Mach-O and boot images; run Stage 3/4 tests and LLVM cross-compilation in GitHub Actions.
 2. Audit RAM layout and bootloader ABI; establish a reliable diagnostic output path (UART/USB/log buffer with verified mapping).
-3. Create an XNU kernel source/patch strategy for SM8150 based on public XNU and upstream research; **do not** copy non-redistributable Apple components.
+3. Replace the compile-only SWEET-to-NABU identifier transformation with independently reviewed SM8150 PlatformExpert, memory/MMU and device-specific code.
 4. Validate Mach-O structure and segment mapping offline before even considering a temporary boot.
 5. Bring up XNU in single-CPU diagnostic mode, then platform devices, storage, display and userland.
 
