@@ -30,7 +30,7 @@ jobs:
         run: python3 -m unittest discover -s stage4/tests -v
       - name: Offline Mach-O/DTB layout tests
         run: python3 -m unittest discover -s tools/tests -v
-      - name: XNU staging and ADT contract tests
+      - name: XNU staging, boot_args and Stage 5 handoff tests
         run: python3 -m unittest discover -s xnu/tests -v
 
   arm64:
