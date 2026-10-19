@@ -55,6 +55,33 @@ python3 stage9/tools/usb_dtb_gate.py \
 
 The Android report deliberately does not demand the mainline `phys` and `usb-role-switch` bindings, because the downstream USB driver uses different properties. This is not a certificate of early-boot usability.
 
+## Stage 9.1: observe actual Android USB gadget state via rooted Termux
+
+The [read-only Termux helper](tools/termux_usb_status.sh) enumerates only
+selected USB1/USB2 platform devices, kernel USB Device Controllers (UDCs)
+and Type-C port role/status values. It does **not** mount debugfs, read
+serial numbers/descriptors/bootargs, rebind drivers, write gadget settings,
+or modify PHY/PMIC/GPIO registers.
+
+On a nabu running **normal Android**, with KernelSU root if needed:
+
+```sh
+su -c 'sh -s' < "$HOME/termux_usb_status.sh" > "$HOME/nabu-usb-status.txt" 2>&1
+```
+
+Useful fields are UDC names such as `a600000.dwc3`, `state`,
+`current_speed`, `maximum_speed`, and (if exposed by the kernel's
+Type-C class) `data_role`/`power_role`/`port_type`.
+Unavailable data means **unknown**; it is not a failure or reason to
+force a clock/PHY/role switch.
+
+A successfully configured Android USB gadget would show that the
+hardware/controller is usable by the running Android kernel. It **cannot**
+prove that Qualcomm ABL hands the controller to U-Boot in the same state,
+that U-Boot's USB drivers work, or that XNU can continue logging after
+U-Boot exits. Host tests execute the script only on synthetic sysfs
+fixtures; no tablet is accessed in CI.
+
 ## Remaining hard blockers
 
 1. We have no confirmed physical memory allocation/relocation contract from ABL. Stage 6.1's reset timing cannot prove a range is free.
