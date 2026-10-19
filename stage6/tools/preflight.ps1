@@ -46,7 +46,7 @@ if ([System.IO.Path]::GetFileName($abs) -cne 'nabu-stage6-audit.img') {
 $shaPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'out\SHA256SUMS.txt'
 if (-not [System.IO.File]::Exists($shaPath)) { Fail 'Missing SHA256SUMS.txt' }
 $shaText = [System.IO.File]::ReadAllText($shaPath)
-if ($shaText -notmatch '(?im)^([a-f0-9]{64})\s+out/nabu-stage6-handoff\.img\s*$') {
+if ($shaText -notmatch '(?im)^([a-f0-9]{64})\s+out/nabu-stage6-audit\.img\s*$') {
   Fail 'Expected hash entry missing'
 }
 $expected = $Matches[1].ToLowerInvariant()
