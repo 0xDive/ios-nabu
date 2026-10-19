@@ -66,4 +66,14 @@ allocations or proves that the Type-C role switch can be driven from U-Boot.
 4. With suitable hardware precautions, only then test a **temporary** `fastboot boot` image. Absolutely no partition flashing or bootloader replacement.
 5. A running U-Boot gadget could provide **its own** boot log. Getting **XNU** messages after handoff still requires a distinct diagnostic transport.
 
-The current Stage 8 CI only tests a compiler and the configuration for an **MTP reference**, without supplying any executable output or board-specific image for the tablet.
+Stage 8.1 **also** compiled an ARM64 U-Boot ELF with public nabu DTB,
+and [Stage 10](../stage10/README.md) additionally verifies the pinned
+driver match table, generic DWC3 OTG-to-gadget path, SM8150 USB HS PHY
+match, `DM_USB_GADGET` / `USB_DWC3_GADGET` in the final Kconfig, and
+disabled Flash/OEM arbitrary commands.
+
+The actual nabu running Android **enumerates** its `a600000.dwc3`
+gadget at High-Speed when connected to a PC. Neither this nor the host-built
+U-Boot ELF proves that U-Boot can bring up PM8150B Type-C/PHY and clocks
+after ABL; initializing DWC3 writes MMIO registers and asserts resets.
+No executable U-Boot, device DTB or boot image is published by this CI.
