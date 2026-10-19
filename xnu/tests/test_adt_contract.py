@@ -41,7 +41,7 @@ class ADTContractTests(unittest.TestCase):
         seed = bytes(range(64))
         chosen = unpack(pack(make_adt(self.hardware, seed=seed))).child("chosen")
         self.assertEqual(chosen.props["random-seed"], seed)
-        self.assertEqual(chosen.props["system-firmware-version"], b"nabu-stage4-offline\\0".replace(b"\\0", bytes(1)))
+        self.assertEqual(chosen.props["system-firmware-version"], b"nabu-stage4-offline" + bytes(1))
         with self.assertRaises(ValueError):
             make_adt(self.hardware, seed=b"short")
 
