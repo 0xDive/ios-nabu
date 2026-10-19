@@ -150,7 +150,8 @@ struct nabu_memory_report nabu_memory_probe(
 
     uint32_t at = off_struct, end_struct = off_struct + sz_struct;
     const char *names = (const char *)(f + off_strings);
-    uint32_t depth = 0, root_addr_cells = 0, root_size_cells = 0;
+    int depth = 0;
+    uint32_t root_addr_cells = 0, root_size_cells = 0;
     uint32_t reserved_addr_cells = 0, reserved_size_cells = 0;
     int memory_depth = -1, reserved_depth = -1, reserved_child_depth = -1;
     int child_has_reg = 0, child_has_size = 0;
