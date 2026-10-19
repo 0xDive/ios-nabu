@@ -4,6 +4,12 @@
 
 The project's first goal is to see whether XNU 8796 (iOS 16 generation) can be cross-compiled with a dedicated `NABU` machine identifier on a macOS GitHub Actions runner.
 
+## Verified host-side build
+
+The macOS workflow [run 39295105141](https://github.com/0xDive/ios-nabu/actions/runs/39295105141) completed successfully, including the **offline Mach-O validation step**. Its compiler produced `kernel.development.nabu`; the inspector reported **19 segments**, ARM64 cputype, entry VA `0xFFFFFE000748B488` within a segment, and no chained fixups. This proves successful compilation and basic file structure **only**.
+
+The compiled kernel is intentionally not included in workflow artifacts or published as a ready-to-boot image, pending independent hardware mapping, driver review and permission to redistribute derivative binaries.
+
 ## Provenance and reproducibility
 
 - Base XNU build environment: [blacktop/darwin-xnu-build](https://github.com/blacktop/darwin-xnu-build), revision `663906528d1cd5ea8fde7de6f16de73db9511549`.
