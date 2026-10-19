@@ -12,7 +12,8 @@
 - [x] Observe an autonomous reset after approximately 8–10 seconds on real nabu with the first Stage 6 image (timing only, no persistent log; see [PR #14](https://github.com/0xDive/ios-nabu/pull/14) for subsequent FDT completeness fix).
 - [ ] Independently verify the newly hardened Stage 6.1 parser on a real nabu (no need to repeat the older image).
 - [ ] Independently verify free RAM at ABL handoff; the FDT alone cannot prove all live firmware allocations.
-- [ ] Establish a logging transport independent of unverified framebuffer addresses.
+- [x] Identify and decode the nabu Android-DTB GENI UART console (`0x00A90000` / GPIO85/86), including clock/pinctrl phandles; add [read-only Stage 7 tools](../stage7/README.md) and CI mocks.
+- [ ] Establish an electrically and firmware-verified early-boot UART or USB logging transport independent of unverified framebuffer addresses. Android-only tty/clock observations are not ABL logs.
 - [x] Compile `kernel.development.nabu` as an ARM64 Mach-O on macOS, using **mechanically adapted SWEET identifiers**, and verify 19 segments and entry VA. ([CI](https://github.com/0xDive/ios-nabu/actions/runs/39295105141))
 - [ ] Replace mechanical identity changes with validated SM8150-specific PlatformExpert and driver implementations.
 - [x] Implement offline-only ADT and `boot_args` v2 schema with independent tests.
