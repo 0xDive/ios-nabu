@@ -1,4 +1,4 @@
-name: Offline validation
+name: Verify Stage 3 and Stage 4
 
 on:
   push:
@@ -9,24 +9,37 @@ permissions:
   contents: read
 
 jobs:
-  repository-checks:
+  tests:
+    name: Source and offline unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check repository policy
-        shell: bash
+      - name: Validate repository contents
         run: |
           set -euo pipefail
-          python3 --version
-          test -s README.md
-          test -s docs/ROADMAP.md
-          test -s docs/SAFETY.md
           python3 tools/repository_guard.py
+          test -s stage3/src/handoff.c
+          test -s stage4/tools/mkadt_nabu.py
+      - name: Stage 3 Python unit tests
+        run: python3 -m unittest discover -s stage3/tests -v
+      - name: Stage 4 Python unit tests
+        run: python3 -m unittest discover -s stage4/tests -v
 
-  stage-source-tests:
-    if: false # Enable after audited stage3/stage4 sources are imported
-    runs-on: ubuntu-latest
+  arm64:
+    name: Cross-compile Stage 3 test shim
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: python3 -m unittest discover -s stage3/tests -v
-      - run: python3 -m unittest discover -s stage4/tests -v
+      - name: Install LLVM cross compilation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm binutils python3
+      - name: Build minimal ARM64 diagnostic
+        run: bash stage3/build.sh
+      - name: Verify generated boot header and ramdisk
+        run: |
+          python3 -m unittest discover -s stage3/tests -v
+          python3 stage3/tools/bootimg.py inspect stage3/out/nabu-stage3-handoff.img
+          (cd stage3 && sha256sum --check out/SHA256SUMS.txt)
+      - name: Assert no redistribution of personal data
+        run: python3 tools/repository_guard.py
