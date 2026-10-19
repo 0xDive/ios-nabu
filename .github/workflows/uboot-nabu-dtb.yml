@@ -9,6 +9,7 @@ on:
       - 'stage8/BOARD_GAPS.md'
       - 'stage9/**'
       - 'stage10/**'
+      - 'stage11/**'
       - '.github/workflows/uboot-nabu-dtb.yml'
 
 permissions:
@@ -36,6 +37,7 @@ jobs:
           python3 -m unittest discover -s stage8/tests -v
           python3 -m unittest discover -s stage9/tests -v
           python3 -m unittest discover -s stage10/tests -v
+          python3 -m unittest discover -s stage11/tests -v
       - name: Install cross-compiler and DTB prerequisites
         run: |
           set -euo pipefail
@@ -130,6 +132,10 @@ jobs:
             --dtb "$BUILD/nabu-public-source-only.dtb" \
             --config "$BUILD/.config" --uboot "$SRC" \
             --out stage8/out/nabu-uboot-usb-driver-contract.json
+          python3 stage11/tools/typec_power_gate.py \
+            --dtb "$BUILD/nabu-public-source-only.dtb" \
+            --config "$BUILD/.config" --uboot "$SRC" \
+            --out stage8/out/nabu-pm8150b-typec-power-blockers.json
           echo 'Public nabu DTB USB topology accepted; runtime PHY/Type-C still unknown.'
       - name: Compile U-Boot ARM64 with only prevalidated nabu DTB (NEVER BOOT)
         run: |
@@ -190,6 +196,7 @@ jobs:
             stage8/out/public-nabu-source-contract.json
             stage8/out/nabu-usb-dtb-gate.json
             stage8/out/nabu-uboot-usb-driver-contract.json
+            stage8/out/nabu-pm8150b-typec-power-blockers.json
             stage8/out/nabu-dtb-uboot-config.json
             stage8/out/nabu-compiled-compatible.txt
             stage8/out/nabu-dts-compile-tail.txt
