@@ -136,7 +136,7 @@ def make_adt(info):
     for i,mpidr in enumerate(info["cpu_mpidr"]):
         props = dict(handle(),**{
             "device_type":cstr("cpu"),
-            "compatible":cstr("qcom,sm8150")+cstr("ARM,v8"),
+            "compatible":cstr("qcom,kryo485")+cstr("qcom,sm8150")+cstr("ARM,v8"),
             "reg":u32(mpidr),
             "cpu-id":u32(i),
             "cluster-id":u32(0),
