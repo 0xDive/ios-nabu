@@ -65,6 +65,8 @@ jobs:
         with:
           name: nabu-stage6-readonly-fdt-audit-NOT-XNU
           path: |
+            stage6/README.md
+            stage6/tools/preflight.ps1
             stage6/out/nabu-stage6-audit.img
             stage6/out/SHA256SUMS.txt
           if-no-files-found: error
