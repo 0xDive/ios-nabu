@@ -7,6 +7,7 @@ on:
       - 'stage8/tools/inspect_nabu_source.py'
       - 'stage8/tests/test_inspect_nabu_source.py'
       - 'stage8/BOARD_GAPS.md'
+      - 'stage9/**'
       - '.github/workflows/uboot-nabu-dtb.yml'
 
 permissions:
@@ -32,6 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m unittest discover -s stage8/tests -v
+          python3 -m unittest discover -s stage9/tests -v
       - name: Install cross-compiler and DTB prerequisites
         run: |
           set -euo pipefail
@@ -118,7 +120,10 @@ jobs:
             | tee stage8/out/nabu-compiled-compatible.txt
           grep -q 'xiaomi,nabu' stage8/out/nabu-compiled-compatible.txt
           grep -q 'qcom,sm8150' stage8/out/nabu-compiled-compatible.txt
-          echo 'Public nabu DTS syntax/labels validated; USB/PMIC behavior untested.'
+          python3 stage9/tools/usb_dtb_gate.py \
+            --dtb "$BUILD/nabu-public-source-only.dtb" --kind public \
+            --out stage8/out/nabu-usb-dtb-gate.json
+          echo 'Public nabu DTB USB topology accepted; runtime PHY/Type-C still unknown.'
       - name: Compile U-Boot ARM64 with only prevalidated nabu DTB (NEVER BOOT)
         run: |
           set -euo pipefail
@@ -176,6 +181,7 @@ jobs:
           path: |
             stage8/out/public-source-sha256.txt
             stage8/out/public-nabu-source-contract.json
+            stage8/out/nabu-usb-dtb-gate.json
             stage8/out/nabu-dtb-uboot-config.json
             stage8/out/nabu-compiled-compatible.txt
             stage8/out/nabu-dts-compile-tail.txt
