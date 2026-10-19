@@ -82,6 +82,58 @@ that U-Boot's USB drivers work, or that XNU can continue logging after
 U-Boot exits. Host tests execute the script only on synthetic sysfs
 fixtures; no tablet is accessed in CI.
 
+## Stage 9.2: measured nabu USB gadget registration, not yet an active link
+
+The user supplied a **read-only rooted Termux** observation from running
+Android:
+
+| Kernel sysfs path or attribute | Observed value |
+| --- | --- |
+| `/sys/class/udc/` | `a600000.dwc3` |
+| `state` | `not attached` |
+| `current_speed` | `UNKNOWN` |
+| `maximum_speed` | `high-speed` |
+| `is_otg` | `1` |
+| `/sys/class/typec/port*` | No matching ports reported |
+
+This **confirms UDC registration, hardware OTG capability reported by the
+driver and a High-Speed maximum**, consistently with the USB1 public DTB.
+It does **not** confirm an active host connection, USB gadget driver binding,
+USB enumeration or even whether the cable was connected at the snapshot
+time. `/sys/class/typec` being empty also does not mean the physical
+Type-C port or PM8150B Type-C controller is missing; Qualcomm vendor
+kernels may expose roles through other classes.
+
+Linux defines these statuses in
+[`sysfs-class-udc`](https://github.com/torvalds/linux/blob/master/Documentation/ABI/stable/sysfs-class-udc).
+Actual state reporting varies between UDC implementations.
+
+The new [read-only link snapshot helper](tools/termux_usb_link.sh)
+records **only** the allowlisted UDC state, speed and OTG fields, whether a
+gadget driver name is nonempty (without exposing it), optional
+`/sys/class/power_supply/usb/online` and optional
+`/sys/class/usb_role/*/role`. It never reads USB serials/descriptors,
+changes USB gadget configuration, switches Type-C roles or uses raw MMIO.
+
+Run once with the cable disconnected and once with an ordinary, known
+data-capable USB cable connected to a PC. To execute the repository script
+from Termux, copy it into the Termux home directory first; no download is
+required if you use the equivalent inline commands from the project
+discussion:
+
+```sh
+su -c 'sh -s disconnected' < "$HOME/termux_usb_link.sh" > "$HOME/usb-disconnected.txt" 2>&1
+# Connect normally to the PC; don't modify USB settings.
+su -c 'sh -s connected' < "$HOME/termux_usb_link.sh" > "$HOME/usb-connected.txt" 2>&1
+```
+
+The `connected`/ `disconnected` labels are **operator-supplied**; they do
+not prove the cable state. If USB remains `not attached`, investigate
+Android gadget binding, power detection and data cable/host conditions
+before blaming the DWC3 controller. A `configured` status on the running
+Android kernel is useful but **still not proof** that U-Boot can enumerate
+at ABL handoff or that XNU can log over USB.
+
 ## Remaining hard blockers
 
 1. We have no confirmed physical memory allocation/relocation contract from ABL. Stage 6.1's reset timing cannot prove a range is free.
