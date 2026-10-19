@@ -72,7 +72,7 @@ if (-not $Boot) {
   Write-Host 'DRY RUN: no device action.'
   exit 0
 }
-Write-Host 'Warning: read-only boot-time FDT probe. ~8s: static checks and no dynamic nodes; ~16s: dynamic regions unresolved; ~28s: reservation/ramdisk/FDT conflict; ~40s: unsupported FDT or RAM. All are diagnostic only. Black screen and forced reset remain possible.
+Write-Host 'Warning: read-only FDT survey. 8/16/28/40-second reboot codes are diagnostics ONLY. Never flash any partition.' -ForegroundColor Yellow
 $ack = Read-Host 'Type BOOT to permit a single temporary fastboot boot'
 if ($ack -cne 'BOOT') { Write-Host 'Cancelled.'; exit 0 }
 & $fb.Source boot $abs
