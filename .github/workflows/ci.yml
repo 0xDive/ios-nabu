@@ -38,6 +38,8 @@ jobs:
         run: python3 -m unittest discover -s xnu/tests -v
       - name: Stage 8 U-Boot USB diagnostic configuration tests
         run: python3 -m unittest discover -s stage8/tests -v
+      - name: Stage 9 Qualcomm nabu DWC3/HS PHY tests
+        run: python3 -m unittest discover -s stage9/tests -v
       - name: Publish Stage 7 host-only UART inspection tools
         uses: actions/upload-artifact@v4
         with:
