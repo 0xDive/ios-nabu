@@ -19,8 +19,8 @@ static int wait_seconds(uint32_t s) {
 }
 static uint64_t psci_call(uint32_t id,uint8_t method) {
     register uint64_t x0 __asm__("x0")=id;
-    if(method==1) __asm__ volatile("smc #0":"+r"(x0)::"x1","x2","x3","x4","x5","x6","x7","memory");
-    else __asm__ volatile("hvc #0":"+r"(x0)::"x1","x2","x3","x4","x5","x6","x7","memory");
+    if(method==1) __asm__ volatile("smc #0":"+r"(x0)::"x1","x2","x3","x4","x5","x6","x7","x8","x9","x10","x11","x12","x13","x14","x15","x16","x17","memory");
+    else __asm__ volatile("hvc #0":"+r"(x0)::"x1","x2","x3","x4","x5","x6","x7","x8","x9","x10","x11","x12","x13","x14","x15","x16","x17","memory");
     return x0;
 }
 void diag_main(void *dtb) {
