@@ -17,6 +17,7 @@ The project explores booting an ARM64 XNU kernel on nabu, using a minimal ABL-co
 | Stage 3 — payload in initrd, second-stage handoff | **Likely** | Device reportedly rebooted automatically after ~10 s; distinct failure path waits ~27 s. Timing is indicative, not a trace. |
 | Stage 4 — offline ADT draft and Mach-O inspection | **Host-side only** | Prototype tools and local tests; **no XNU boot image**. |
 | Stage 4.5 — compile XNU for NABU | **Host-side passed** | [macOS GitHub Actions](https://github.com/0xDive/ios-nabu/actions/runs/39295105141) produced `kernel.development.nabu`; ARM64 Mach-O with 19 segments, valid entry VA `0xFFFFFE000748B488`, no chained fixups. **Not tested on device.** |
+| Stage 4.9 — Mach-O/ADT/boot_args handoff plan | **Host-side passed** | [PR #9](https://github.com/0xDive/ios-nabu/pull/9) corrected XNU's 32 MiB virtual-base mapping; [PR #10](https://github.com/0xDive/ios-nabu/pull/10) added an offline-only manifest of segment copy/BSS operations and ABI checks. No executable payload. |
 | Stage 5 — actual XNU entry on nabu | **Not demonstrated** | Requires bootloader-time memory proof, trustworthy early logging, a reviewed loader, and platform hardware adaptations. |
 | iOS userland, graphics, touch, network | **Not implemented** | Requires much more platform and driver work. |
 
@@ -35,7 +36,7 @@ Based on a locally inspected user-provided Linux FDT (not uploaded to this repos
 
 - `stage3/` — conservative diagnostic ABL shim + separate ARM64 payload from Android ramdisk.
 - `stage4/` — offline-only DTB/ADT/Mach-O analysis tools (not a bootable OS).
-- `xnu/` — pinned macOS XNU compile experiment, preliminary ADT and ARM64 boot_args v2 tooling; **nothing bootable**.
+- `xnu/` — pinned macOS XNU compile experiment, preliminary ADT, ARM64 boot_args v2 and [Stage 5 offline handoff](xnu/STAGE5.md) planning tools; **nothing bootable**.
 - `docs/` — porting notes, safety limits, roadmap.
 - `.github/workflows/` — host-side Python tests and LLVM ARM64 build checks.
 
