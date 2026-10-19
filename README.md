@@ -35,17 +35,17 @@ Based on a locally inspected user-provided Linux FDT (not uploaded to this repos
 - `stage3/` — conservative diagnostic ABL shim + separate ARM64 payload from Android ramdisk.
 - `stage4/` — offline-only DTB/ADT/Mach-O analysis tools (not a bootable OS).
 - `docs/` — porting notes, safety limits, roadmap.
-- `.github/workflows/` — host-side tests and builds (to be added).
+- `.github/workflows/` — host-side Python tests and LLVM ARM64 build checks.
 
 ## Building and experimenting
 
-For the Stage 3 experiment, see [stage3/README.md](stage3/README.md). For the Stage 4 offline tools, see [stage4/README.md](stage4/README.md). **Do not flash any partition** from this repository. Temporary `fastboot boot` can still hang or reset the device and does not eliminate hardware risk.
+For the Stage 3 diagnostic source and build, see [stage3/README.md](stage3/README.md). For the Stage 4 offline utilities, see [stage4/NOTES.md](stage4/NOTES.md). **Do not flash any partition** from this repository. Temporary `fastboot boot` can still hang or reset the device and does not eliminate hardware risk.
 
 No Apple proprietary firmware, IPSW, decrypted system image, device dumps, keys, private serials, personally sourced DTB, or custom boot images are distributed here. Use legal, appropriately licensed inputs and review any third-party code/licenses before redistribution.
 
 ## Immediate engineering tasks
 
-1. Reproduce all Stage 3 and Stage 4 host tests in GitHub Actions.
+1. Add broader negative tests for malformed FDT, ADT, Mach-O and boot images; run Stage 3/4 tests and LLVM cross-compilation in GitHub Actions.
 2. Audit RAM layout and bootloader ABI; establish a reliable diagnostic output path (UART/USB/log buffer with verified mapping).
 3. Create an XNU kernel source/patch strategy for SM8150 based on public XNU and upstream research; **do not** copy non-redistributable Apple components.
 4. Validate Mach-O structure and segment mapping offline before even considering a temporary boot.
