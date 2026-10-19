@@ -8,6 +8,7 @@ on:
       - 'stage8/tests/test_inspect_nabu_source.py'
       - 'stage8/BOARD_GAPS.md'
       - 'stage9/**'
+      - 'stage10/**'
       - '.github/workflows/uboot-nabu-dtb.yml'
 
 permissions:
@@ -34,6 +35,7 @@ jobs:
           set -euo pipefail
           python3 -m unittest discover -s stage8/tests -v
           python3 -m unittest discover -s stage9/tests -v
+          python3 -m unittest discover -s stage10/tests -v
       - name: Install cross-compiler and DTB prerequisites
         run: |
           set -euo pipefail
@@ -84,6 +86,7 @@ jobs:
           BUILD="$GITHUB_WORKSPACE/_nabu_uboot_build"
           make -C "$SRC" O="$BUILD" qcom_defconfig qcom-phone.config
           "$SRC/scripts/config" --file "$BUILD/.config" \
+            -e DM_USB_GADGET -e USB_DWC3_GADGET \
             -d FASTBOOT_FLASH -d FASTBOOT_OEM_RUN -d FASTBOOT_CMD_OEM_RUN \
             -d CMD_UMS -d CMD_USB_MASS_STORAGE -d CMD_DFU \
             -d EFI_CAPSULE_ON_DISK -d EFI_RUNTIME_UPDATE_CAPSULE
@@ -123,6 +126,10 @@ jobs:
           python3 stage9/tools/usb_dtb_gate.py \
             --dtb "$BUILD/nabu-public-source-only.dtb" --kind public \
             --out stage8/out/nabu-usb-dtb-gate.json
+          python3 stage10/tools/uboot_usb_driver_gate.py \
+            --dtb "$BUILD/nabu-public-source-only.dtb" \
+            --config "$BUILD/.config" --uboot "$SRC" \
+            --out stage8/out/nabu-uboot-usb-driver-contract.json
           echo 'Public nabu DTB USB topology accepted; runtime PHY/Type-C still unknown.'
       - name: Compile U-Boot ARM64 with only prevalidated nabu DTB (NEVER BOOT)
         run: |
@@ -182,6 +189,7 @@ jobs:
             stage8/out/public-source-sha256.txt
             stage8/out/public-nabu-source-contract.json
             stage8/out/nabu-usb-dtb-gate.json
+            stage8/out/nabu-uboot-usb-driver-contract.json
             stage8/out/nabu-dtb-uboot-config.json
             stage8/out/nabu-compiled-compatible.txt
             stage8/out/nabu-dts-compile-tail.txt
