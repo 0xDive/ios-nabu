@@ -15,24 +15,30 @@ def be32(*parts):
     return struct.pack(">"+"I"*len(parts),*parts)
 
 
+def N(name, props=None, children=None):
+    # dtb_inspect.Node is dataclass(name, children, props); keywords avoid
+    # positional field-order confusion.
+    return Node(name, children=list(children or []), props=dict(props or {}))
+
+
 def fake_tree():
-    clock = Node("clock-controller@100", {
+    clock = N("clock-controller@100", {
         "phandle": be32(42),
         "#clock-cells": be32(1),
     })
-    default = Node("qupv3_se12_2uart_active", {
+    default = N("qupv3_se12_2uart_active", {
         "phandle": be32(100)
     }, [
-        Node("mux", {"pins":b"gpio85\0gpio86\0", "function":b"qup12\0"}),
-        Node("config", {"pins":b"gpio85\0gpio86\0", "drive-strength":be32(2)})
+        N("mux", {"pins":b"gpio85\0gpio86\0", "function":b"qup12\0"}),
+        N("config", {"pins":b"gpio85\0gpio86\0", "drive-strength":be32(2)})
     ])
-    sleep = Node("qupv3_se12_2uart_sleep", {
+    sleep = N("qupv3_se12_2uart_sleep", {
         "phandle": be32(101)
     }, [
-        Node("mux", {"pins":b"gpio85\0gpio86\0", "function":b"gpio\0"})
+        N("mux", {"pins":b"gpio85\0gpio86\0", "function":b"gpio\0"})
     ])
-    pinctrl = Node("pinctrl@3000000", {}, [default,sleep])
-    uart = Node("qcom,qup_uart@0xa90000", {
+    pinctrl = N("pinctrl@3000000", {}, [default,sleep])
+    uart = N("qcom,qup_uart@0xa90000", {
         "compatible": b"qcom,msm-geni-console\0",
         "status":b"ok\0",
         "reg":be32(0xA90000,0x4000),
@@ -44,12 +50,12 @@ def fake_tree():
         "pinctrl-1":be32(101),
         "serial-number":b"PRIVATE_EXAMPLE_NEVER_EXPORTED",
     })
-    soc = Node("soc", {"#address-cells":be32(1),"#size-cells":be32(1)},
+    soc = N("soc", {"#address-cells":be32(1),"#size-cells":be32(1)},
                [clock,pinctrl,uart])
-    chosen = Node("chosen", {
+    chosen = N("chosen", {
         "bootargs": b"PRIVATE_PASSWORD_EXAMPLE",
     })
-    return Node("", {
+    return N("", {
         "model":b"NABU\0",
         "compatible":b"qcom,sm8150-cdp\0qcom,sm8150\0",
         "#address-cells":be32(2),"#size-cells":be32(2),
