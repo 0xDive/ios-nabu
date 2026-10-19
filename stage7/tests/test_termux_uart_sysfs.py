@@ -23,14 +23,17 @@ class TermuxSysfsTests(unittest.TestCase):
             platforms.mkdir(parents=True)
             ttys.mkdir(parents=True)
             (drivers / "msm_geni_serial").mkdir()
+            (drivers / "i2c_geni").mkdir()
             for address, compatible in (
                 ("a90000", "qcom,msm-geni-console"),
                 ("c8c000", "qcom,msm-geni-serial-hs"),
+                ("a84000", "qcom,msm-geni-serial-hs"),
             ):
                 node = soc / f"qcom,qup_uart@0x{address}"
                 node.mkdir(parents=True)
                 (node / "compatible").write_bytes(compatible.encode() + bytes(1))
-                (node / "status").write_bytes(b"ok" + bytes(1))
+                status = b"disabled" if address == "a84000" else b"ok"
+                (node / "status").write_bytes(status + bytes(1))
                 (node / "clock-names").write_bytes(b"se-clk" + bytes(1))
                 (node / "private-key").write_text("DO_NOT_READ_THIS", encoding="utf-8")
                 device = platforms / f"{address}.qcom,qup_uart"
@@ -41,6 +44,14 @@ class TermuxSysfsTests(unittest.TestCase):
                     tty = ttys / "ttyHS0"
                     tty.mkdir()
                     (tty / "device").symlink_to(device)
+            # The same QUP SE at 0xA84000 is bound as i2c_geni, not
+            # a second UART: this occurred on the real Xiaomi Pad 5.
+            i2c_node = soc / "i2c@a84000"
+            i2c_node.mkdir()
+            i2c_device = platforms / "a84000.i2c"
+            i2c_device.mkdir()
+            (i2c_device / "of_node").symlink_to(i2c_node)
+            (i2c_device / "driver").symlink_to(drivers / "i2c_geni")
             result = subprocess.run(
                 ["sh", str(SCRIPT)],
                 capture_output=True, text=True, errors="replace", check=False,
@@ -53,11 +64,16 @@ class TermuxSysfsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertIn("=== UART MMIO 0xa90000 ===",result.stdout)
         self.assertIn("=== UART MMIO 0xc8c000 ===",result.stdout)
-        self.assertIn("driver=unbound-or-not-available",result.stdout)
+        self.assertIn("uart_platform_device=a90000.qcom,qup_uart",result.stdout)
+        self.assertIn("driver_symlink_present=no",result.stdout)
+        self.assertIn("driver_binding=not-confirmed",result.stdout)
+        self.assertIn("driver_binding=confirmed",result.stdout)
         self.assertIn("msm_geni_serial",result.stdout)
         self.assertIn("tty=ttyHS0",result.stdout)
         self.assertIn("c8c000.qcom,qup_uart",result.stdout)
-        self.assertIn("platform_device=not-found",result.stdout)
+        self.assertIn("other_protocol_device=a84000.i2c (I2C, not UART)",result.stdout)
+        self.assertIn("uart_platform_device=a84000.qcom,qup_uart",result.stdout)
+        self.assertNotIn("uart_platform_device=a84000.i2c",result.stdout)
         self.assertIn("read_only=yes",result.stdout)
         self.assertIn("abl_uart_state_proven=no",result.stdout)
 
