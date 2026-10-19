@@ -6,11 +6,13 @@
 - [x] Stage 2.1 PSCI system reset after approximately seven seconds, observed on one device.
 - [x] Stage 3 second-stage payload hypothesis supported by ~10-second automatic reboot. It is *not* proof of XNU entry.
 - [x] Host-side Apple Device Tree draft and Mach-O inspection prototype in Stage 4.
-- [ ] Import and audit original Stage 3 and Stage 4 source and host test suites.
-- [ ] Set up reproducible cross-compiler build and artifact integrity checks.
+- [x] Import Stage 3 and Stage 4 research source and host test suites; exclude private DTB and device dumps.
+- [x] Set up reproducible LLVM ARM64 diagnostic build with artifact integrity checks.
 - [ ] Validate exact boot ABI, runtime memory reservations, and FDT placement from ABL.
 - [ ] Establish a logging transport independent of unverified framebuffer addresses.
-- [ ] Build an ARM64 XNU Mach-O with target-specific PlatformExpert changes.
+- [x] Compile `kernel.development.nabu` as an ARM64 Mach-O on macOS, using **mechanically adapted SWEET identifiers**, and verify 19 segments and entry VA. ([CI](https://github.com/0xDive/ios-nabu/actions/runs/39295105141))
+- [ ] Replace mechanical identity changes with validated SM8150-specific PlatformExpert and driver implementations.
+- [x] Implement offline-only ADT and `boot_args` v2 schema with independent tests.
 - [ ] Verify all Mach-O segments and rebases against non-overlapping physical RAM.
 - [ ] Controlled temporary XNU entry test using `fastboot boot`, no partition writes.
 - [ ] Bring up IRQ/clock/CPU on SM8150 with `cpus=1` initially.
