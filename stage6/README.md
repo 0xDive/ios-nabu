@@ -31,7 +31,14 @@ The diagnostic will request a **single automatic PSCI reboot** at one of these d
 | Around **32 seconds** | Incomplete/unsupported FDT, missing chosen ramdisk, or incompatible MMU state |
 | No autonomous restart | Early failure, absent compatible FDT/PSCI, hang or unsupported boot environment |
 
-The distinction is approximate and not a persistent log; **no outcome proves free memory or XNU execution**. Do not repeat a hung test many times.
+The distinction is approximate and not a persistent log; **no outcome proves free memory or XNU execution**.
+
+## Real device observation (19 October 2026)
+
+The initial Stage 6 image reportedly restarted a Xiaomi Pad 5 (`product=nabu`) by itself after **approximately 8–10 seconds**. This is consistent with the eight-second branch in `diag.c`; there is no persistent trace, and the actual FDT tree could not be captured in that test.
+
+**Interpretation warning:** review found that the original FDT parser allowed the eight-second branch even when `/reserved-memory` was absent. This cannot be used as evidence that all firmware carveouts were described. The strengthened parser now requires the node to exist with at least one fixed `reg` carveout; otherwise it refuses to report a valid audit. The 8–10-second observation predates that change. A re-test of a newly built and hash-verified diagnostic is required to distinguish the cases, and even a repeat of the eight-second outcome does not establish runtime-safe XNU memory.
+ Do not repeat a hung test many times.
 
 ## Build on Ubuntu / WSL
 

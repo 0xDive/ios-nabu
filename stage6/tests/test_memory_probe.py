@@ -28,7 +28,7 @@ def pad4(data):
 
 
 def dtb(*, ram_end=0x200000000, fixed=None, dynamic=7, memreserve=None,
-        malformed_reg=False):
+        malformed_reg=False, include_reserved=True):
     """Synthetic FDT following the actual nabu's 2/2 cell convention."""
     keys = ("#address-cells", "#size-cells", "model", "compatible", "reg",
             "size", "method", "linux,initrd-start", "linux,initrd-end")
@@ -62,19 +62,24 @@ def dtb(*, ram_end=0x200000000, fixed=None, dynamic=7, memreserve=None,
         regs = regs[:-1]
     tree += prop("reg", regs)
     tree += end
-    tree += node("reserved-memory")
-    tree += prop("#address-cells", be32(2))
-    tree += prop("#size-cells", be32(2))
-    if fixed:
+    if include_reserved:
+        tree += node("reserved-memory")
+        tree += prop("#address-cells", be32(2))
+        tree += prop("#size-cells", be32(2))
+        # Normal synthetic nabu includes at least one mapped reservation.
+        # Explicit fixed=[] tests an empty fixed inventory separately.
+        if fixed is None:
+            fixed = [(0xA1600000, 0x800000)]
         for i, (start, size) in enumerate(fixed):
             tree += node(f"carveout@{i:x}")
             tree += prop("reg", struct.pack(">QQ", start, size))
             tree += end
-    for index in range(dynamic):
-        tree += node(f"dynamic@{index}")
-        tree += prop("size", struct.pack(">Q", 0x100000))
+        for index in range(dynamic):
+            tree += node(f"dynamic@{index}")
+            tree += prop("size", struct.pack(">Q", 0x100000))
+            tree += end
         tree += end
-    tree += end + end + be32(9)
+    tree += end + be32(9)
     reserve = b"".join(struct.pack(">QQ", a, sz) for a, sz in (memreserve or []))
     reserve += bytes(16)   # mandatory 0/0 terminator
     off_reserve = 40
@@ -131,6 +136,18 @@ class NativeAuditTests(unittest.TestCase):
     def test_no_dynamic_reservations_does_not_prove_ram_free(self):
         r = self.run_probe(dtb(dynamic=0))
         self.assertEqual((r.valid, r.candidate_in_ram, r.dynamic_unknown), (1, 1, 0))
+
+    def test_missing_reserved_root_is_not_success(self):
+        r = self.run_probe(dtb(include_reserved=False))
+        self.assertEqual(r.valid, 0)
+
+    def test_reserved_root_without_fixed_spans_is_not_success(self):
+        r = self.run_probe(dtb(fixed=[], dynamic=0))
+        self.assertEqual(r.valid, 0)
+
+    def test_dynamic_nodes_do_not_substitute_fixed_spans(self):
+        r = self.run_probe(dtb(fixed=[], dynamic=7))
+        self.assertEqual(r.valid, 0)
 
     def test_fixed_reservation_overlap(self):
         r = self.run_probe(dtb(fixed=[(CANDIDATE_LO + 0x10000, 0x100000)]))
