@@ -110,6 +110,37 @@ binding as confirmed only when a real `driver` symlink and target are
 present, and separately labels the I²C protocol device rather than counting
 it as a UART. These are facts about *running Android*, not ABL entry.
 
+## Stage 7.3: Why the A90000 console is unbound
+
+The user verified on their actual tablet:
+
+- `a90000.qcom,qup_uart` has **no** `driver` symlink, despite the
+  `qcom,msm-geni-console` node having `status=ok`.
+- `c8c000.qcom,qup_uart` has a working `msm_geni_serial` driver
+  binding, which owns `ttyHS0`.
+- `a84000.i2c` is bound to `i2c_geni`; the UART alternative is disabled.
+
+One possible explanation is a **compiled-out console match**. Qualcomm's
+Android `msm_geni_serial.c` includes `qcom,msm-geni-console` in its
+OF-match table only under `CONFIG_SERIAL_CORE_CONSOLE` or
+`CONFIG_CONSOLE_POLL`; it matches `qcom,msm-geni-serial-hs` independently.
+That is a hypothesis until the *exact device kernel configuration* is known.
+Other causes, including deferred/failed driver probing, are possible.
+
+Primary source:
+[Qualcomm Android kernel msm_geni_serial.c](https://android.googlesource.com/kernel/msm/+/2d6f0a6828b52c32d2588c6d1069957afdb1124d/drivers/tty/serial/msm_geni_serial.c).
+
+[termux_console_config.sh](tools/termux_console_config.sh) is a **read-only**
+Kconfig/status check for rooted Termux. It inspects only the console platform
+device's driver link and narrow `uevent` keys, and if present, decompresses
+`/proc/config.gz` to print five *allowlisted* feature flags. It never
+prints a full kernel config, mounts debugfs, writes driver `bind` or
+`driver_override`, probes registers, or exposes serial identifiers.
+
+A missing `/proc/config.gz` means **unknown**, not "console disabled".
+Even if console support is built, its runtime availability at ABL entry,
+electrical TX test pads and ability to log XNU remain unknown.
+
 ## 3. Interpretation and future work
 
 Useful evidence is agreement across the private DTB, Android's active UART console device (if present), and a clock/pinmux reading that refers specifically to the `0xA90000` controller. Even that only proves a **running-Android state**. It does not reveal the electrical pin voltage, board test points or the UART state at ABL handoff.
