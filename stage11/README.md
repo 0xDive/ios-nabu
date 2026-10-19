@@ -34,6 +34,10 @@ Source: [SeimoDev/linux-xiaomi-nabu, exact commit `4e6d08bb1b467c721e19cd693e4ec
 | Type-C controller | `qcom,pm8150b-typec`, enabled | Enabled in board DTB, **not** proof of a U-Boot driver |
 | Connector | `usb-c-connector` with dual data/power roles; reciprocal `remote-endpoint` graph to USB1 HS endpoint | DTB graph only; CC/role negotiated state at ABL entry is unknown |
 | USB VBUS source | `qcom,pm8150b-vbus-reg`, enabled | A **source-mode power regulator**, not the same as host-provided VBUS detection |
+| USB1 wrapper clocks | Six declared inputs: `cfg_noc`, `core`, `iface`, `sleep`, `mock_utmi`, `xo` | All clock-provider phandles are parsed, **not physically measured** |
+| USB1 clock rates | DTS `assigned-clocks` with `19.2 MHz` and `200 MHz` assigned rates | These are configuration targets, not measured frequencies |
+| USB1 wrapper / HS PHY reset | GCC reset phandles + USB1 GDSC power-domain phandle | Reset and power-domain dependencies are declared, not asserted to be active |
+| USB1 HS PHY reference | One `ref` clock from RPMh clock provider | No ABL-time clock-enable proof |
 
 ## What pinned U-Boot v2026.07 actually implements
 
@@ -50,7 +54,7 @@ Crucially, even **if** ABL leaves Type-C sink role established, U-Boot's driver 
 
 ## Repeatable host-only gate
 
-[`stage11/tools/typec_power_gate.py`](tools/typec_power_gate.py) consumes **only** a compiled *public* `nabu` DTB, pinned U-Boot tree and generated `.config`. It checks all three HS PHY supply phandles and their voltage constraints, PM8150B PD PHY's shared L2 rail, enabled Type-C and VBUS nodes, dual-role connector and bidirectional Type-C/USB1 endpoint graph. It separately checks source code evidence for VBUS support and the lack of a native PM8150B Type-C match in the inspected U-Boot drivers.
+[`stage11/tools/typec_power_gate.py`](tools/typec_power_gate.py) consumes **only** a compiled *public* `nabu` DTB, pinned U-Boot tree and generated `.config`. It checks all three HS PHY supply phandles and their voltage constraints, PM8150B PD PHY's shared L2 rail, enabled Type-C and VBUS nodes, dual-role connector and bidirectional Type-C/USB1 endpoint graph. It also validates the USB1 GCC clock, reset, GDSC power-domain and RPMh HS PHY reference-clock provider graph and the public DTS's assigned clock-rate constraints. None of these checks reads a hardware register. It separately checks source code evidence for VBUS support and the lack of a native PM8150B Type-C match in the inspected U-Boot drivers.
 
 The output `nabu-pm8150b-typec-power-blockers.json` is a sanitized **blocker report**, with **`safe_to_boot: false`** regardless of how many static checks pass. It is uploaded by [the Stage 8.1 host-only CI workflow](../.github/workflows/uboot-nabu-dtb.yml). No U-Boot ELF, DTB, firmware, private Android image or owner's device data is distributed.
 
