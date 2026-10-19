@@ -4,6 +4,7 @@ This repository is research only. No functioning iOS or iPadOS port has been dem
 
 - Never run `fastboot flash`, `erase`, `format`, or partition-resizing operations based on this research.
 - Temporary `fastboot boot` *does not write a partition*, but firmware errors and bare-metal code can still hang or reboot hardware. Back up your data and keep a recovery route.
+- Do not enable the PM8150B VBUS source regulator to test a **device/sink-mode** USB connection, and do not blindly bind Type-C drivers, reset USB PHY, set GPIO or write Qualcomm USB QSCRATCH/SPMI registers. Their early-boot power/clock state is unverified.
 - Do not read or write arbitrary physical memory addresses. A Linux FDT's reserved-memory region does **not** grant safe access to its physical address at ABL handoff.
 - Only run test builds after inspecting the exact target device (`product=nabu`, bootloader unlocked, not fastbootd) and matching Android boot format.
 - Kernel entry and a black screen are **not equivalent**. Need positive debugging evidence.
