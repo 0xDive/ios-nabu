@@ -52,6 +52,32 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def convert_patch_bytes(data: bytes) -> bytes:
+    """Keep raw/un-decodable Git patch lines byte-for-byte unchanged.
+
+    Real upstream Git patch 0058 contains non-UTF-8 lines. Re-encoding the whole
+    file as text would destroy those bytes and make a broken patch. We only
+    rename identifiers on UTF-8 lines. Git binary-patch payload is untouched.
+    """
+    transformed = []
+    in_git_binary_patch = False
+    for line in data.splitlines(keepends=True):
+        if line.startswith(b"diff --git "):
+            in_git_binary_patch = False
+        if line.startswith(b"GIT binary patch"):
+            in_git_binary_patch = True
+        if in_git_binary_patch:
+            transformed.append(line)
+            continue
+        try:
+            decoded = line.decode("utf-8")
+        except UnicodeDecodeError:
+            transformed.append(line)
+            continue
+        transformed.append(convert_text(decoded).encode("utf-8"))
+    return b"".join(transformed)
+
+
 def stage(source: Path, destination: Path, manifest: Path) -> dict:
     source = source.resolve()
     destination = destination.resolve()
@@ -81,15 +107,11 @@ def stage(source: Path, destination: Path, manifest: Path) -> dict:
         if entry.stat().st_size > 4 * 1024 * 1024:
             raise ValueError(f"Unexpectedly large patch: {entry.name}")
         original = entry.read_bytes()
-        try:
-            decoded = original.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise ValueError(f"Non-UTF-8 upstream file: {entry.name}") from exc
         output_name = convert_text(entry.name)
         if output_name in used or (destination / output_name).is_file():
             raise ValueError(f"Generated patch collides with existing file: {output_name}")
         used.add(output_name)
-        transformed = convert_text(decoded).encode("utf-8")
+        transformed = convert_patch_bytes(original)
         result.append((entry, output_name, original, transformed))
 
     destination.mkdir(parents=True, exist_ok=True)
