@@ -60,6 +60,32 @@ The script first requires exactly one authorized connected Android device with `
 
 If debugfs isn't mounted or permissions deny access, the information is **unknown**, not a reason to enable it or alter Android. Android `ttyMSM0` existence is not proof that ABL leaves the same serial engine initialized.
 
+## 2a. Termux follow-up: map TTY to physical UART (read-only)
+
+The user's rooted Termux snapshot found that `ttyHS0` is **not** the
+debug-console candidate: its sysfs `device` resolves to
+`/sys/devices/platform/soc/c8c000.qcom,qup_uart`, driver
+`msm_geni_serial`, OF compatible `qcom,msm-geni-serial-hs` and
+`status=ok`. No UART entry appeared in `/proc/consoles`. Debugfs was
+**not mounted**, so clock and GPIO pinmux status remain unknown.
+
+For a more precise look, [termux_uart_sysfs.sh](tools/termux_uart_sysfs.sh)
+reads *only* platform-device binding symlinks, selected safe DTB properties
+(`status`, `compatible`, `clock-names`, `pinctrl-names`) and
+UART-like tty mappings for `0xA90000`, `0xC8C000` and `0xA84000`.
+
+Download or copy this reviewed script to your Termux home directory, then run:
+
+```sh
+su -c 'sh -s' < "$HOME/termux_uart_sysfs.sh" > "$HOME/nabu-uart-map.txt" 2>&1
+```
+
+Nothing is mounted or modified. The script does **not** probe MMIO or
+physically touch GPIO85/86; its stdout is suitable for review after checking
+for any local details you prefer not to share. A platform device with
+`driver=unbound-or-not-available` is **not** proof a UART is electrically
+disabled or unavailable to the bootloader.
+
 ## 3. Interpretation and future work
 
 Useful evidence is agreement across the private DTB, Android's active UART console device (if present), and a clock/pinmux reading that refers specifically to the `0xA90000` controller. Even that only proves a **running-Android state**. It does not reveal the electrical pin voltage, board test points or the UART state at ABL handoff.
