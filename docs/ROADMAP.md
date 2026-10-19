@@ -9,7 +9,8 @@
 - [x] Import Stage 3 and Stage 4 research source and host test suites; exclude private DTB and device dumps.
 - [x] Set up reproducible LLVM ARM64 diagnostic build with artifact integrity checks.
 - [x] Build and test a read-only, temporary [Stage 6](../stage6/README.md) ARM64 ABL-time FDT memory probe; it classifies FDT-advertised RAM and known/dynamic reservations (host-side CI success, device outcome pending).
-- [ ] Run Stage 6 once on nabu and record the exact reboot timing and fastboot response.
+- [x] Observe an autonomous reset after approximately 8–10 seconds on real nabu with the first Stage 6 image (timing only, no persistent log; see [PR #14](https://github.com/0xDive/ios-nabu/pull/14) for subsequent FDT completeness fix).
+- [ ] Independently verify the newly hardened Stage 6.1 parser on a real nabu (no need to repeat the older image).
 - [ ] Independently verify free RAM at ABL handoff; the FDT alone cannot prove all live firmware allocations.
 - [ ] Establish a logging transport independent of unverified framebuffer addresses.
 - [x] Compile `kernel.development.nabu` as an ARM64 Mach-O on macOS, using **mechanically adapted SWEET identifiers**, and verify 19 segments and entry VA. ([CI](https://github.com/0xDive/ios-nabu/actions/runs/39295105141))
