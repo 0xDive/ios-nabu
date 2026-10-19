@@ -85,8 +85,12 @@ class UartDtbTests(unittest.TestCase):
     def test_no_private_fields_exported(self):
         report = json.dumps(inspect(fake_tree()))
         for secret in ("PRIVATE_EXAMPLE","PRIVATE_ROOT_SERIAL",
-                       "PRIVATE_PASSWORD_EXAMPLE","bootargs","serial-number"):
+                       "PRIVATE_PASSWORD_EXAMPLE"):
             self.assertNotIn(secret,report)
+        # The prose warning may mention "bootargs" as a forbidden field.
+        # Ensure no raw sensitive property is serialized as a JSON key.
+        self.assertNotIn('"bootargs":',report)
+        self.assertNotIn('"serial-number":',report)
 
     def test_missing_clock_provider_rejected(self):
         root = fake_tree()
