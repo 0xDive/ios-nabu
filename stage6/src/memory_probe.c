@@ -266,10 +266,16 @@ struct nabu_memory_report nabu_memory_probe(
             return fail;
         }
     }
-    if (!complete || !saw_root || !saw_ram ||
+    /*
+     * Fail closed: Qualcomm nabu must expose a reserved-memory node with at
+     * least one fixed carveout for this diagnostic to make any claim about
+     * the candidate range. The previous logic accepted a missing node as
+     * "no reservations", which could produce a misleading 8-second signal.
+     */
+    if (!complete || !saw_root || !saw_ram || !saw_reserved_root ||
+        !r.fixed_count ||
         root_addr_cells != 2 || root_size_cells != 2 ||
-        (saw_reserved_root &&
-         (reserved_addr_cells != 2 || reserved_size_cells != 2)))
+        reserved_addr_cells != 2 || reserved_size_cells != 2)
         return fail;
 
     r.valid = 1;
