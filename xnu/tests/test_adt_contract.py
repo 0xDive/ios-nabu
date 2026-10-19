@@ -37,6 +37,23 @@ class ADTContractTests(unittest.TestCase):
             compatible = cpu.props["compatible"].split(bytes(1))
             self.assertIn(b"qcom,kryo485", compatible)
 
+    def test_kernel_entropy_is_present_and_length_checked(self):
+        seed = bytes(range(64))
+        chosen = unpack(pack(make_adt(self.hardware, seed=seed))).child("chosen")
+        self.assertEqual(chosen.props["random-seed"], seed)
+        self.assertEqual(chosen.props["system-firmware-version"], b"nabu-stage4-offline" + bytes(1))
+        with self.assertRaises(ValueError):
+            make_adt(self.hardware, seed=b"short")
+
+    def test_cpu_topology_properties_are_consistent(self):
+        tree = unpack(pack(make_adt(self.hardware, seed=bytes(64))))
+        cpus = tree.child("cpus").children
+        for i, cpu in enumerate(cpus):
+            self.assertEqual(cpu.props["l2-cache-id"], u32(i))
+            self.assertEqual(cpu.props["l3-cache-id"], u32(0))
+            self.assertEqual(cpu.props["timebase-frequency"], u32(19_200_000))
+            self.assertEqual(cpu.props["peripheral-frequency"], u32(19_200_000))
+
     def test_gic_and_arch_timer(self):
         tree = unpack(pack(make_adt(self.hardware)))
         gic = tree.child("arm-io").child("gic")
