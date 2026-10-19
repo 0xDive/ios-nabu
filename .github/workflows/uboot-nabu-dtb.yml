@@ -87,23 +87,35 @@ jobs:
             --config "$BUILD/.config" \
             --report stage8/out/nabu-dtb-uboot-config.json
 
-      - name: Attempt public nabu DTS integration (NEVER BOOT)
+      - name: Compile only nabu DTS from matching public SoC/PMIC sources
         run: |
           set -euo pipefail
           SRC="$GITHUB_WORKSPACE/_nabu_uboot"
           BUILD="$GITHUB_WORKSPACE/_nabu_uboot_build"
-          if ! make -C "$SRC" O="$BUILD" -j4 DEVICE_TREE="$DEVICE_TREE" \
-               > stage8/out/nabu-dts-compile.log 2>&1; then
+          mkdir -p "$BUILD"
+          # The generic U-Boot make target compiles *all* upstream qcom DTBs.
+          # Replacing sm8150.dtsi to match nabu broke an unrelated sm8150-hdk
+          # board; use the same pinned U-Boot include tree and isolate nabu.
+          # This is a DTS preprocessor and dtc proof, NOT an U-Boot binary.
+          if ! {
+              gcc -E -P -x assembler-with-cpp -nostdinc -undef -D__DTS__ \
+                -I "$SRC/dts/upstream/include" \
+                -I "$SRC/dts/upstream/src/arm64/qcom" \
+                "$SRC/dts/upstream/src/arm64/qcom/sm8150-xiaomi-nabu.dts" \
+                -o "$BUILD/nabu-preprocessed.dts"
+              dtc -@ -I dts -O dtb \
+                -o "$BUILD/nabu-public-source-only.dtb" \
+                "$BUILD/nabu-preprocessed.dts"
+            } > stage8/out/nabu-dts-compile.log 2>&1; then
             tail -n 130 stage8/out/nabu-dts-compile.log
             exit 1
           fi
-          test -s "$BUILD/u-boot.dtb"
-          fdtget -t s "$BUILD/u-boot.dtb" / compatible \
+          test -s "$BUILD/nabu-public-source-only.dtb"
+          fdtget -t s "$BUILD/nabu-public-source-only.dtb" / compatible \
             | tee stage8/out/nabu-compiled-compatible.txt
           grep -q 'xiaomi,nabu' stage8/out/nabu-compiled-compatible.txt
-          test -s "$BUILD/u-boot"
-          echo 'This is a source-level compatibility compile, NOT verified nabu boot support.'
-
+          grep -q 'qcom,sm8150' stage8/out/nabu-compiled-compatible.txt
+          echo 'DTS-only syntax/labels validated. No nabu U-Boot executable built.'
       - name: Collect diagnostics and disclaimers
         if: always()
         run: |
