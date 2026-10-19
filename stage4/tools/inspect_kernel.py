@@ -42,7 +42,12 @@ def inspect(raw: bytes) -> dict:
                 raise ValueError('Short LC_SEGMENT_64')
             name=raw[offset+8:offset+24].split(b'\0',1)[0].decode('ascii','replace')
             vmaddr,vmsize,fileoff,filesize=struct.unpack_from('<QQQQ',raw,offset+24)
-            if filesize > vmsize:
+            # Mach-O can carry file-only metadata such as __CTF with
+            # vmsize=0 and filesize>0. Such segments are not placed into RAM.
+            # Reject this layout for ordinary executable/data segments.
+            if filesize > vmsize and not (
+                vmsize == 0 and name in ('__CTF', '__DWARF', '__LLVM')
+            ):
                 raise ValueError(f'{name}: file size larger than VM size')
             if filesize and (fileoff > len(raw) or filesize > len(raw)-fileoff):
                 raise ValueError(f'{name}: data outside Mach-O')
