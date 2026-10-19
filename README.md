@@ -18,7 +18,7 @@ The project explores booting an ARM64 XNU kernel on nabu, using a minimal ABL-co
 | Stage 4 — offline ADT draft and Mach-O inspection | **Host-side only** | Prototype tools and local tests; **no XNU boot image**. |
 | Stage 4.5 — compile XNU for NABU | **Host-side passed** | [macOS GitHub Actions](https://github.com/0xDive/ios-nabu/actions/runs/39295105141) produced `kernel.development.nabu`; ARM64 Mach-O with 19 segments, valid entry VA `0xFFFFFE000748B488`, no chained fixups. **Not tested on device.** |
 | Stage 4.9 — Mach-O/ADT/boot_args handoff plan | **Host-side passed** | [PR #9](https://github.com/0xDive/ios-nabu/pull/9) corrected XNU's 32 MiB virtual-base mapping; [PR #10](https://github.com/0xDive/ios-nabu/pull/10) added an offline-only manifest of segment copy/BSS operations and ABI checks. No executable payload. |
-| Stage 6 — read-only ABL-time FDT memory probe | **Observed ~8–10 s restart; interpretation provisional** | [PR #11](https://github.com/0xDive/ios-nabu/pull/11), [Stage 6 README](stage6/README.md): boot v3 diagnostic checks advertised memory banks, fixed/dynamic reservations and loaded spans, returning a coarse 8/16/24/32-second PSCI signal. No arbitrary memory writes. [PR #14](https://github.com/0xDive/ios-nabu/pull/14) makes the parser reject an absent or empty fixed `/reserved-memory` inventory. The ~8–10 s result was on the older image, **not** this corrected one. |
+| Stage 6 / 6.1 — ABL-time FDT memory probe | **Two approximate ~8-second autonomous resets, not a persistent log** | [PR #11](https://github.com/0xDive/ios-nabu/pull/11) implemented read-only static checks. [PR #14](https://github.com/0xDive/ios-nabu/pull/14) rejects missing fixed `/reserved-memory` and was retested on hardware: black screen and reset within roughly 8 seconds (timing uncertain). This is **not proof of writable kernel RAM**. |
 | Stage 5 — actual XNU entry on nabu | **Not demonstrated** | Requires bootloader-time memory proof, trustworthy early logging, a reviewed loader, and platform hardware adaptations. |
 | iOS userland, graphics, touch, network | **Not implemented** | Requires much more platform and driver work. |
 
@@ -51,7 +51,7 @@ No Apple proprietary firmware, IPSW, decrypted system image, device dumps, keys,
 ## Immediate engineering tasks
 
 1. Add broader negative tests for malformed FDT, ADT, Mach-O and boot images; run Stage 3/4 tests and LLVM cross-compilation in GitHub Actions.
-2. Test [Stage 6](stage6/README.md) on actual ABL handoff, then establish a reliable diagnostic output path; the FDT audit does **not** prove runtime-free kernel RAM.
+2. Stage 6/6.1 shows approximate ~8-second automatic resets, but no execution trace; establish [a real early logging channel](docs/EARLY_CONSOLE.md) and independently verify bootloader-time RAM before loading XNU.
 3. Replace the compile-only SWEET-to-NABU identifier transformation with independently reviewed SM8150 PlatformExpert, memory/MMU and device-specific code.
 4. Validate Mach-O structure and segment mapping offline before even considering a temporary boot.
 5. Bring up XNU in single-CPU diagnostic mode, then platform devices, storage, display and userland.
