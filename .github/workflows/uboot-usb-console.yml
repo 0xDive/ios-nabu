@@ -84,6 +84,13 @@ jobs:
             exit 1
           fi
           test -s "$BUILD/u-boot"
+          # Confirm the device tree packed into this test build really is
+          # SM8150 MTP. NEVER mistake it for nabu based on CPU family alone.
+          test -s "$BUILD/u-boot.dtb"
+          fdtget -t s "$BUILD/u-boot.dtb" / compatible \
+            | tee stage8/out/reference-dtb-compatible.txt
+          grep -q 'qcom,sm8150-mtp' stage8/out/reference-dtb-compatible.txt
+          ! grep -q 'xiaomi,nabu' stage8/out/reference-dtb-compatible.txt
           file "$BUILD/u-boot"
           file "$BUILD/u-boot" | grep -Eq 'ARM aarch64|ARM64|aarch64'
           sha256sum "$BUILD/u-boot" | awk '{ print $1 "  (host-built U-Boot ELF, NOT distributed)" }' \
@@ -109,6 +116,7 @@ jobs:
           name: nabu-stage8-uboot-host-only-diagnostics
           path: |
             stage8/out/usb-log-compile-audit.json
+            stage8/out/reference-dtb-compatible.txt
             stage8/out/uboot-elf-hash.txt
             stage8/out/compile-tail.txt
             stage8/out/DO_NOT_BOOT_OR_FLASH.txt
