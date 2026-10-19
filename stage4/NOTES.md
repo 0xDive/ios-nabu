@@ -1,0 +1,1 @@
+Stage 4 is an offline proof-of-concept for Apple Device Tree (ADT) generation and ARM64 Mach-O structure inspection. It is not an iOS ROM or a bootable XNU kernel. Keep local device DTB files and generated reports out of the repository. Test with: python3 -m unittest discover -s stage4/tests -v
