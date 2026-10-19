@@ -41,6 +41,23 @@ full U-Boot source builds via an ephemeral one-board DTS workaround in the
 CI runner; no claim of mainline U-Boot nabu support or suitable firmware
 image is made.
 
+## Stage 9 compiled-DTB USB graph verification
+
+[PR #23](https://github.com/0xDive/ios-nabu/pull/23) adds a fail-closed
+[USB PHY/OTG audit](../stage9/README.md) against the **actual compiled nabu
+DTB**. GitHub CI verifies the primary DWC3 core at `0x0A600000` has
+`dr_mode=otg`, `maximum-speed=high-speed`, exactly one `usb2-phy`
+phandle resolving to the enabled HS PHY `0x088E2000`, disabled QMP SS PHY,
+and an explicit USB role switch. USB2 `0x0A800000` stays host-only.
+Results are sanitized; no DTB or U-Boot binary is redistributed.
+
+The user's **running-Android** DTB also reports USB1 at `0x0A600000` as
+OTG High-Speed, but differs in driver/PHY bindings and reports the secondary
+host USB2 controller as **SuperSpeed Plus**, compared with the published
+mainline board's High-Speed. This difference must be understood before
+choosing real PHY/clock setup. Neither DTS describes all live ABL/TrustZone
+allocations or proves that the Type-C role switch can be driven from U-Boot.
+
 ## Gate before considering USB-based on-device debug
 
 1. **Partially completed:** compile public `qcom/sm8150-xiaomi-nabu` DTS and embed it in a host-built U-Boot ELF; **still required:** review U-Boot-specific DT properties and bootloader-time clock/PHY/pinctrl/regulator/Type-C driver operation without reusing MTP board hardware assumptions.
