@@ -40,13 +40,37 @@ for ADDR in a90000 c8c000 a84000; do
     PLAT_FOUND=0
     for DEV in "$ROOT/sys/bus/platform/devices/"*"$ADDR"*; do
         [ -e "$DEV" ] || continue
+        DEV_NAME="${DEV##*/}"
+        case "$DEV_NAME" in
+            "$ADDR".qcom,qup_uart)
+                # Only this platform type represents a UART. The QUP at
+                # 0xA84000 may instead be bound as a84000.i2c (i2c_geni).
+                ;;
+            "$ADDR".i2c)
+                printf 'other_protocol_device=%s (I2C, not UART)\n' "$DEV_NAME"
+                continue
+                ;;
+            *)
+                # Never treat all devices matching an MMIO base as UARTs.
+                continue
+                ;;
+        esac
         PLAT_FOUND=1
-        printf 'platform_device=%s\n' "${DEV##*/}"
-        printf 'driver='
+        printf 'uart_platform_device=%s\n' "$DEV_NAME"
         if [ -L "$DEV/driver" ]; then
-            readlink -f "$DEV/driver" 2>/dev/null || printf '%s\n' 'unknown'
+            printf 'driver_symlink_present=yes\n'
+            if [ -e "$DEV/driver" ]; then
+                printf 'driver_binding=confirmed\n'
+                printf 'driver_link='
+                readlink "$DEV/driver" 2>/dev/null || printf '%s\n' 'unreadable'
+            else
+                printf 'driver_binding=target-unavailable\n'
+            fi
         else
-            printf '%s\n' 'unbound-or-not-available'
+            # readlink -f of a nonexistent final component can still print a
+            # path on some Android builds. Never call that proof of binding.
+            printf 'driver_symlink_present=no\n'
+            printf 'driver_binding=not-confirmed\n'
         fi
         printf 'platform_of_node='
         if [ -L "$DEV/of_node" ]; then
@@ -55,7 +79,7 @@ for ADDR in a90000 c8c000 a84000; do
             printf '%s\n' 'missing'
         fi
     done
-    [ "$PLAT_FOUND" -eq 1 ] || printf '%s\n' 'platform_device=not-found'
+    [ "$PLAT_FOUND" -eq 1 ] || printf '%s\n' 'uart_platform_device=not-found'
 done
 
 printf '\n%s\n' '=== TTY-TO-PLATFORM CONNECTIONS ==='
