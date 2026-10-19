@@ -14,6 +14,9 @@ from pathlib import Path
 PAGE = 0x4000
 LIMIT = 1 << 64
 MAX_VM_SIZE = 256 * 1024 * 1024
+# XNU on ARM64 maps the kernel at a 32 MiB-aligned virtual L2 block base.
+# This is lower than the Mach-O __TEXT segment VA in the current NABU build.
+XNU_L2_BLOCK = 0x2000000
 
 
 def number(value):
@@ -44,9 +47,15 @@ def intersects(a, b, c, d):
 
 def ranges(table):
     result = []
+    if not isinstance(table, dict):
+        raise ValueError("Memory inventory must be an object")
     for name, entries in table.items():
+        # dtb_inspect.summarize emits {"ranges":[...],"no_map":true},
+        # whereas older synthetic reports contained bare lists.
+        if isinstance(entries, dict):
+            entries = entries.get("ranges")
         if not isinstance(entries, list):
-            raise ValueError(f"{name} does not contain a list of regions")
+            raise ValueError(f"{name} has no valid ranges list")
         for i, entry in enumerate(entries):
             start, end = number(entry["address"]), number(entry["end_exclusive"])
             if end <= start:
@@ -70,17 +79,27 @@ def assess(macho, device_tree, base, adt_size, initrd=None):
     mapped = []
     for segment in segments:
         start, size = number(segment["vmaddr"]), number(segment["vmsize"])
-        if number(segment["filesize"]) > size:
+        file_size = number(segment["filesize"])
+        if not size:
+            # The successfully built XNU kernel has a file-only __CTF
+            # segment. No RAM mapping is assigned to file-only metadata.
+            if file_size and segment["name"] not in ("__CTF", "__DWARF", "__LLVM"):
+                raise ValueError("Unknown file-only Mach-O segment")
+            continue
+        if file_size > size:
             raise ValueError("Segment file bytes exceed mapped memory")
-        if size:
-            mapped.append((segment["name"], start, add(start, size)))
+        mapped.append((segment["name"], start, add(start, size)))
     if not mapped:
         raise ValueError("No nonempty Mach-O segments")
     mapped.sort(key=lambda s: s[1])
     for left, right in zip(mapped, mapped[1:]):
         if left[2] > right[1]:
             raise ValueError("Overlapping Mach-O VM segments")
-    virt_base = mapped[0][1]
+    first_vmaddr = mapped[0][1]
+    # Match the 32 MiB block mapping used by the pinned XNU/ios-sweet
+    # handoff: virtBase is NOT the first __TEXT vmaddr.
+    virt_base = first_vmaddr & ~(XNU_L2_BLOCK - 1)
+    prefix_size = first_vmaddr - virt_base
     vm_end = mapped[-1][2]
     if vm_end - virt_base > MAX_VM_SIZE:
         raise ValueError("Kernel exceeds conservative 256 MiB limit")
@@ -95,8 +114,14 @@ def assess(macho, device_tree, base, adt_size, initrd=None):
     if not dram or not any(start <= base and allocation_end <= end
                            for _, start, end in dram):
         raise ValueError("Kernel, ADT and boot_args do not fit in a single RAM bank")
-    collision = [name for name, start, end in ranges(
-        device_tree.get("reserved_memory", {}))
+    reserved = device_tree.get("reserved_memory", {})
+    if not isinstance(reserved, dict):
+        raise ValueError("Reserved-memory inventory must be an object")
+    dynamic_unresolved = sorted(name for name, props in reserved.items()
+                                if isinstance(props, dict)
+                                and props.get("dynamic_size_bytes", 0)
+                                and not props.get("ranges"))
+    collision = [name for name, start, end in ranges(reserved)
         if intersects(base, allocation_end, start, end)]
     if collision:
         raise ValueError(f"Reserved-memory collision: {', '.join(collision)}")
@@ -112,6 +137,11 @@ def assess(macho, device_tree, base, adt_size, initrd=None):
         "runtime_free_verified": False,
         "safe_to_boot": False,
         "virtual_base": hex(virt_base),
+        "virtual_mapping_block_bytes": XNU_L2_BLOCK,
+        "first_segment_va": hex(first_vmaddr),
+        "first_segment_physical": hex(add(base, prefix_size)),
+        "mapping_prefix_bytes": prefix_size,
+        "dynamic_reservations_unresolved": dynamic_unresolved,
         "physical_base": hex(base),
         "entry_physical": hex(add(base, entry_va - virt_base)),
         "kernel_end_exclusive": hex(phys_end),
@@ -126,6 +156,7 @@ def assess(macho, device_tree, base, adt_size, initrd=None):
         "limitations": [
             "Linux DTB reservations may differ from those present at ABL handoff.",
             "Dynamic firmware allocations and boot-time FDT placement are unknown.",
+            "Locations for dynamic reserved-memory entries cannot be inferred from Android FDT.",
             "No safe memory allocation, Mach-O relocation or XNU execution is proven.",
             "This report MUST NOT be used to boot or flash an experimental kernel."
         ]
