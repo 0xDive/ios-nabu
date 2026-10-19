@@ -8,6 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "stage9" / "tools"))
+sys.path.insert(0, str(ROOT / "stage4" / "tools"))
 from dtb_inspect import Node
 from usb_dtb_gate import inspect, compare, USB1, USB2, USB1_WRAPPER
 
