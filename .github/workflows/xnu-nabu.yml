@@ -1,0 +1,120 @@
+name: XNU NABU - experimental compilation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'xnu/**'
+      - '.github/workflows/xnu-nabu.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xnu-nabu-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DXB_REPO: https://github.com/blacktop/darwin-xnu-build
+  DXB_SHA: 663906528d1cd5ea8fde7de6f16de73db9511549
+  SWEET_REPO: https://github.com/dipa-studio/ios-sweet
+  SWEET_SHA: fdad0de8dc0e75c5ea84762adc03f7232dc91f19
+  MACOS_VERSION: '13.5'
+  KERNEL_CONFIG: DEVELOPMENT
+  MACHINE_CONFIG: NABU
+
+jobs:
+  xnu:
+    name: Compile XNU (NOT an installable kernel)
+    runs-on: macos-14
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch exact, pinned experimental build sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init -q dxb
+          git -C dxb fetch -q --depth=1 "$DXB_REPO" "$DXB_SHA"
+          git -C dxb checkout -q FETCH_HEAD
+          test "$(git -C dxb rev-parse HEAD)" = "$DXB_SHA"
+          git init -q upstream-sweet
+          git -C upstream-sweet fetch -q --depth=1 "$SWEET_REPO" "$SWEET_SHA"
+          git -C upstream-sweet checkout -q FETCH_HEAD
+          test "$(git -C upstream-sweet rev-parse HEAD)" = "$SWEET_SHA"
+          test -d dxb/patches
+          test -d upstream-sweet/xnu/patches
+
+      - name: Create experimental NABU patch workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s xnu/tests -v
+          python3 xnu/tools/stage_upstream.py \
+            --source upstream-sweet/xnu/patches \
+            --dest dxb/patches \
+            --manifest xnu/out/staged-patches.json
+          test -f dxb/patches/0004-nabu-machine-config.patch
+          test -f dxb/patches/0016-nabu-device-tree-platform-expert.patch
+          test -f dxb/patches/0018-nabu-boot-cpu-driver.patch
+          # Same arm64 architecture-enablement workaround as pinned ios-sweet.
+          sed -i '' 's/ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"/ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64"/' dxb/build.sh
+          grep -q 'VALID_ARCHS="x86_64 arm64e arm64"' dxb/build.sh
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install jq gum bash cmake ninja
+          # The upstream script expects the xcodes command, but preinstalled
+          # GitHub macOS runner Xcode is chosen explicitly below.
+          printf '#!/bin/sh\nexit 0\n' | sudo tee /usr/local/bin/xcodes >/dev/null
+          sudo chmod +x /usr/local/bin/xcodes
+          XC=$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -type d | sort -V | head -1)
+          test -d "$XC"
+          echo "DEVELOPER_DIR=$XC/Contents/Developer" >> "$GITHUB_ENV"
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+          xcrun --find iig
+
+      - name: Compile experimental NABU machine configuration
+        working-directory: dxb
+        shell: bash
+        env:
+          MAKEFLAGS: '-k'
+        run: |
+          set -o pipefail
+          mkdir -p ../xnu/out
+          bash build.sh 2>&1 | tee ../xnu/out/build.log
+
+      - name: Collect build status (no kernel or proprietary binaries)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p xnu/out
+          if test -f xnu/out/build.log; then
+            tail -n 200 xnu/out/build.log > xnu/out/build-tail.txt
+          else
+            echo 'Compilation did not start.' > xnu/out/build-tail.txt
+          fi
+          if test -d dxb/fakeroot/System/Library/Kernels; then
+            find dxb/fakeroot/System/Library/Kernels -maxdepth 1 -type f -name 'kernel.*' -exec shasum -a 256 {} + > xnu/out/kernel-sha256.txt
+          else
+            echo 'No kernel output generated.' > xnu/out/kernel-sha256.txt
+          fi
+          echo 'Compile experiment only; not suitable for fastboot or flashing.' > xnu/out/DO_NOT_FLASH.txt
+
+      - name: Upload diagnostic logs and provenance only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nabu-xnu-compile-diagnostics
+          path: |
+            xnu/out/staged-patches.json
+            xnu/out/build-tail.txt
+            xnu/out/kernel-sha256.txt
+            xnu/out/DO_NOT_FLASH.txt
+          if-no-files-found: warn
+          retention-days: 5
