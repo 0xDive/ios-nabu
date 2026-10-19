@@ -8,7 +8,9 @@
 - [x] Host-side Apple Device Tree draft and Mach-O inspection prototype in Stage 4.
 - [x] Import Stage 3 and Stage 4 research source and host test suites; exclude private DTB and device dumps.
 - [x] Set up reproducible LLVM ARM64 diagnostic build with artifact integrity checks.
-- [ ] Validate exact boot ABI, runtime memory reservations, and FDT placement from ABL.
+- [x] Build and test a read-only, temporary [Stage 6](../stage6/README.md) ARM64 ABL-time FDT memory probe; it classifies FDT-advertised RAM and known/dynamic reservations (host-side CI success, device outcome pending).
+- [ ] Run Stage 6 once on nabu and record the exact reboot timing and fastboot response.
+- [ ] Independently verify free RAM at ABL handoff; the FDT alone cannot prove all live firmware allocations.
 - [ ] Establish a logging transport independent of unverified framebuffer addresses.
 - [x] Compile `kernel.development.nabu` as an ARM64 Mach-O on macOS, using **mechanically adapted SWEET identifiers**, and verify 19 segments and entry VA. ([CI](https://github.com/0xDive/ios-nabu/actions/runs/39295105141))
 - [ ] Replace mechanical identity changes with validated SM8150-specific PlatformExpert and driver implementations.
