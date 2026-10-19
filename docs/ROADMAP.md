@@ -13,7 +13,8 @@
 - [x] Compile `kernel.development.nabu` as an ARM64 Mach-O on macOS, using **mechanically adapted SWEET identifiers**, and verify 19 segments and entry VA. ([CI](https://github.com/0xDive/ios-nabu/actions/runs/39295105141))
 - [ ] Replace mechanical identity changes with validated SM8150-specific PlatformExpert and driver implementations.
 - [x] Implement offline-only ADT and `boot_args` v2 schema with independent tests.
-- [ ] Verify all Mach-O segments and rebases against non-overlapping physical RAM.
+- [x] Validate the compiled XNU Mach-O file-only `__CTF` segment, 32 MiB virtual-base mapping, real DTB inventory schema, and offline Stage 5 proposed copy/BSS operation plan ([#9](https://github.com/0xDive/ios-nabu/pull/9), [#10](https://github.com/0xDive/ios-nabu/pull/10)).
+- [ ] Verify *runtime* Mach-O placement and any required rebases against firmware/ABL allocations before executing an XNU payload.
 - [ ] Controlled temporary XNU entry test using `fastboot boot`, no partition writes.
 - [ ] Bring up IRQ/clock/CPU on SM8150 with `cpus=1` initially.
 - [ ] UFS read-only proof of concept; subsequently display, touch, networking.
