@@ -184,5 +184,16 @@ class NativeAuditTests(unittest.TestCase):
         self.assertGreaterEqual(r.dynamic_unknown, 1)
 
 
+class WindowsPreflightContract(unittest.TestCase):
+    def test_powershell_hash_entry_matches_build_script(self):
+        ps1 = (ROOT / "tools" / "preflight.ps1").read_text(encoding="utf-8")
+        build = (ROOT / "build.sh").read_text(encoding="utf-8")
+        self.assertIn("nabu-stage6-audit.img", ps1)
+        self.assertIn(r"out/nabu-stage6-audit\.img", ps1)
+        self.assertNotIn("nabu-stage6-handoff", ps1)
+        self.assertIn("out/nabu-stage6-audit.img", build)
+        self.assertIn("SHA256SUMS.txt", ps1)
+
+
 if __name__ == "__main__":
     unittest.main()
