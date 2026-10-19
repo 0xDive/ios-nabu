@@ -4,7 +4,14 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - 'xnu/**'
+      # Rebuild only when kernel compilation inputs or inspection change.
+      # ADT/boot_args offline tools have their own fast Python test workflow.
+      - 'xnu/patches/**'
+      - 'xnu/boards/**'
+      - 'xnu/include/**'
+      - 'xnu/tools/stage_upstream.py'
+      - 'xnu/tests/test_stage_upstream.py'
+      - 'stage4/tools/inspect_kernel.py'
       - '.github/workflows/xnu-nabu.yml'
 
 permissions:
