@@ -31,6 +31,13 @@ REPLACEMENTS = (
     ("SWEET", "NABU"),
     ("Sweet", "Nabu"),
     ("sweet", "nabu"),
+    # Human-readable identity and legacy CPU service match only.
+    # No MMIO address or chipset-specific register logic is changed.
+    ("qcom,kryo470", "qcom,kryo485"),
+    ("Kryo 470", "Kryo 485"),
+    ("Snapdragon 732G", "Snapdragon 860"),
+    ("SM7150", "SM8150"),
+    ("Redmi Note 10 Pro", "Xiaomi Pad 5"),
 )
 
 
