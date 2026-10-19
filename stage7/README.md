@@ -86,6 +86,30 @@ for any local details you prefer not to share. A platform device with
 `driver=unbound-or-not-available` is **not** proof a UART is electrically
 disabled or unavailable to the bootloader.
 
+## Termux follow-up: controller binding clarification
+
+A second owner-supplied rooted-Termux read-only snapshot further resolved the
+same three physical QUP addresses:
+
+- **`0xA90000`**: `a90000.qcom,qup_uart` platform device present;
+  its FDT node declares `qcom,msm-geni-console`, `status=ok`,
+  `se-clk/m-ahb/s-ahb` and pinctrl `default/sleep`.
+  A plain `readlink -f .../driver` returned the `driver` path itself,
+  **not a resolved platform driver**. This is insufficient to claim the
+  device is Linux-driver-bound. Use `test -L .../driver` first.
+- **`0xC8C000`**: `c8c000.qcom,qup_uart` is driver-bound to
+  `msm_geni_serial`; `ttyHS0` maps here, not to `0xA90000`.
+- **`0xA84000`**: the *active* platform device is `a84000.i2c`,
+  driver `i2c_geni`. The separate UART DT node at the same address is
+  `disabled`. **Same QUP address does not mean active UART**.
+- Debugfs remains unmounted, so clock runtime state and GPIO85/86 pinmux
+  status remain unknown. Do not mount it merely to force a result.
+
+[The updated Termux checker](tools/termux_uart_sysfs.sh) now treats a driver
+binding as confirmed only when a real `driver` symlink and target are
+present, and separately labels the I²C protocol device rather than counting
+it as a UART. These are facts about *running Android*, not ABL entry.
+
 ## 3. Interpretation and future work
 
 Useful evidence is agreement across the private DTB, Android's active UART console device (if present), and a clock/pinmux reading that refers specifically to the `0xA90000` controller. Even that only proves a **running-Android state**. It does not reveal the electrical pin voltage, board test points or the UART state at ABL handoff.
