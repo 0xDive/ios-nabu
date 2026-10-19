@@ -18,6 +18,8 @@ The user-provided Xiaomi Pad 5 / SM8150 FDT describes these platform nodes (hard
 
 The candidate `0x00A90000` console has clock names `se-clk`, `m-ahb`, `s-ahb`, and pinctrl states `default` and `sleep`. The working-Android FDT has **no** explicit `/chosen/stdout-path`.
 
+The `pinctrl-0` phandle of this console resolves to `qupv3_se12_2uart_active`, whose mux selects `gpio85` and `gpio86` for `qup12`; its `sleep` state selects ordinary GPIO mode. **These are SoC GPIO names, not identified motherboard pads or a confirmed TX/RX ordering**. Do not attach hardware or toggle the pins from this fact alone.
+
 These facts **do not prove** any UART is already enabled or clocked when ABL enters our bare-metal image; that the pins are available on exposed test points; or that voltage, signal routing, pin mux and clock configuration are correct. The `0x00C8C000` high-speed serial engine may be in use by another peripheral and is not a default debug path.
 
 ## Safe bring-up requirements
