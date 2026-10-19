@@ -18,6 +18,7 @@ The project explores booting an ARM64 XNU kernel on nabu, using a minimal ABL-co
 | Stage 4 — offline ADT draft and Mach-O inspection | **Host-side only** | Prototype tools and local tests; **no XNU boot image**. |
 | Stage 4.5 — compile XNU for NABU | **Host-side passed** | [macOS GitHub Actions](https://github.com/0xDive/ios-nabu/actions/runs/39295105141) produced `kernel.development.nabu`; ARM64 Mach-O with 19 segments, valid entry VA `0xFFFFFE000748B488`, no chained fixups. **Not tested on device.** |
 | Stage 4.9 — Mach-O/ADT/boot_args handoff plan | **Host-side passed** | [PR #9](https://github.com/0xDive/ios-nabu/pull/9) corrected XNU's 32 MiB virtual-base mapping; [PR #10](https://github.com/0xDive/ios-nabu/pull/10) added an offline-only manifest of segment copy/BSS operations and ABI checks. No executable payload. |
+| Stage 6 — read-only ABL-time FDT memory probe | **Host-side passed; device test pending** | [PR #11](https://github.com/0xDive/ios-nabu/pull/11), [Stage 6 README](stage6/README.md): boot v3 diagnostic checks advertised memory banks, fixed/dynamic reservations and loaded spans, returning a coarse 8/16/24/32-second PSCI signal. No arbitrary memory writes. |
 | Stage 5 — actual XNU entry on nabu | **Not demonstrated** | Requires bootloader-time memory proof, trustworthy early logging, a reviewed loader, and platform hardware adaptations. |
 | iOS userland, graphics, touch, network | **Not implemented** | Requires much more platform and driver work. |
 
@@ -36,6 +37,7 @@ Based on a locally inspected user-provided Linux FDT (not uploaded to this repos
 
 - `stage3/` — conservative diagnostic ABL shim + separate ARM64 payload from Android ramdisk.
 - `stage4/` — offline-only DTB/ADT/Mach-O analysis tools (not a bootable OS).
+- `stage6/` — **read-only** bare-metal FDT RAM audit using timed PSCI reset outcomes; no XNU or writing to proposed kernel RAM.
 - `xnu/` — pinned macOS XNU compile experiment, preliminary ADT, ARM64 boot_args v2 and [Stage 5 offline handoff](xnu/STAGE5.md) planning tools; **nothing bootable**.
 - `docs/` — porting notes, safety limits, roadmap.
 - `.github/workflows/` — host-side Python tests and LLVM ARM64 build checks.
@@ -49,7 +51,7 @@ No Apple proprietary firmware, IPSW, decrypted system image, device dumps, keys,
 ## Immediate engineering tasks
 
 1. Add broader negative tests for malformed FDT, ADT, Mach-O and boot images; run Stage 3/4 tests and LLVM cross-compilation in GitHub Actions.
-2. Audit RAM layout and bootloader ABI; establish a reliable diagnostic output path (UART/USB/log buffer with verified mapping).
+2. Test [Stage 6](stage6/README.md) on actual ABL handoff, then establish a reliable diagnostic output path; the FDT audit does **not** prove runtime-free kernel RAM.
 3. Replace the compile-only SWEET-to-NABU identifier transformation with independently reviewed SM8150 PlatformExpert, memory/MMU and device-specific code.
 4. Validate Mach-O structure and segment mapping offline before even considering a temporary boot.
 5. Bring up XNU in single-CPU diagnostic mode, then platform devices, storage, display and userland.
