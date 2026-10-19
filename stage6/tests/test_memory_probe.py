@@ -116,7 +116,7 @@ class NativeAuditTests(unittest.TestCase):
 
     def run_probe(self, tree, *, image=(IMAGE_LO, IMAGE_HI),
                   dtb_pa=DTB_PA, initrd=(INITRD_LO, INITRD_HI)):
-        buf = ctypes.create_string_buffer(tree)
+        buf = ctypes.create_string_buffer(bytes(tree))
         return self.lib.nabu_memory_probe(
             buf, dtb_pa, image[0], image[1],
             CANDIDATE_LO, CANDIDATE_HI, initrd[0], initrd[1]
