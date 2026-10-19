@@ -270,7 +270,7 @@ class TypecPowerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Disabled clocks"):
             self.scan(root)
 
-        def test_does_not_publish_sensitive_dtb_properties(self):
+    def test_does_not_publish_sensitive_dtb_properties(self):
         root = fake_board()
         root.props["serial-number"] = b"PRIVATE_SOC_SERIAL"
         result = self.scan(root)
