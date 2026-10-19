@@ -28,6 +28,8 @@ jobs:
         run: python3 -m unittest discover -s stage3/tests -v
       - name: Stage 4 Python unit tests
         run: python3 -m unittest discover -s stage4/tests -v
+      - name: Stage 6 native FDT memory audit tests
+        run: python3 -m unittest discover -s stage6/tests -v
       - name: Offline Mach-O/DTB layout tests
         run: python3 -m unittest discover -s tools/tests -v
       - name: XNU staging, boot_args and Stage 5 handoff tests
@@ -49,5 +51,21 @@ jobs:
           python3 -m unittest discover -s stage3/tests -v
           python3 stage3/tools/bootimg.py inspect stage3/out/nabu-stage3-handoff.img
           (cd stage3 && sha256sum --check out/SHA256SUMS.txt)
+      - name: Build read-only Stage 6 ABL memory audit
+        run: bash stage6/build.sh
+      - name: Validate Stage 6 boot.img v3 and hash
+        run: |
+          python3 stage3/tools/bootimg.py inspect stage6/out/nabu-stage6-audit.img
+          (cd stage6 && sha256sum --check out/SHA256SUMS.txt)
+          python3 -m unittest discover -s stage6/tests -v
       - name: Assert no redistribution of personal data
         run: python3 tools/repository_guard.py
+      - name: Upload temporary Stage 6 diagnostic only
+        uses: actions/upload-artifact@v4
+        with:
+          name: nabu-stage6-readonly-fdt-audit-NOT-XNU
+          path: |
+            stage6/out/nabu-stage6-audit.img
+            stage6/out/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 7
