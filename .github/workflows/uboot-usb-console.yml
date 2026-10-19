@@ -1,0 +1,124 @@
+name: Stage 8 - U-Boot SM8150 USB console compile (host-only)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'stage8/**'
+      - '.github/workflows/uboot-usb-console.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage8-uboot-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  uboot-sm8150:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      UBOOT_REPO: https://github.com/u-boot/u-boot
+      UBOOT_COMMIT: ece349ade2973e220f524ce59e59711cc919263f
+      CROSS_COMPILE: aarch64-linux-gnu-
+      ARCH: arm
+      DEVICE_TREE: qcom/sm8150-mtp
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python static audit tests
+        run: python3 -m unittest discover -s stage8/tests -v
+
+      - name: Install cross-compile dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            make gcc gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            bc bison flex build-essential device-tree-compiler \
+            libssl-dev libgnutls28-dev libncurses-dev swig \
+            python3-dev python3-pyelftools python3-packaging python3-setuptools
+
+      - name: Fetch exactly pinned open-source U-Boot
+        run: |
+          set -euo pipefail
+          git init -q _stage8_upstream
+          git -C _stage8_upstream fetch -q --depth=1 "$UBOOT_REPO" "$UBOOT_COMMIT"
+          git -C _stage8_upstream checkout -q FETCH_HEAD
+          test "$(git -C _stage8_upstream rev-parse HEAD)" = "$UBOOT_COMMIT"
+          test -f _stage8_upstream/board/qualcomm/qcom-phone.config
+          test -f _stage8_upstream/dts/upstream/src/arm64/qcom/sm8150-mtp.dts
+          # A reference SM8150 board, NOT nabu. No personal DTB.
+          test ! -f _stage8_upstream/dts/upstream/src/arm64/qcom/sm8150-xiaomi-nabu.dts
+
+      - name: Configure read-only USB logging feasibility
+        run: |
+          set -euo pipefail
+          mkdir -p stage8/out
+          SRC="$GITHUB_WORKSPACE/_stage8_upstream"
+          BUILD="$GITHUB_WORKSPACE/_stage8_build"
+          make -C "$SRC" O="$BUILD" qcom_defconfig qcom-phone.config
+          "$SRC/scripts/config" --file "$BUILD/.config" \
+            -d FASTBOOT_FLASH \
+            -d FASTBOOT_OEM_RUN \
+            -d FASTBOOT_CMD_OEM_RUN \
+            -d CMD_UMS \
+            -d CMD_USB_MASS_STORAGE \
+            -d CMD_DFU \
+            -d EFI_CAPSULE_ON_DISK \
+            -d EFI_RUNTIME_UPDATE_CAPSULE
+          make -C "$SRC" O="$BUILD" olddefconfig
+          python3 stage8/tools/audit_uboot_config.py \
+            --config "$BUILD/.config" \
+            --report stage8/out/usb-log-compile-audit.json
+
+      - name: Compile SM8150 reference board (not a nabu image)
+        run: |
+          set -euo pipefail
+          SRC="$GITHUB_WORKSPACE/_stage8_upstream"
+          BUILD="$GITHUB_WORKSPACE/_stage8_build"
+          if ! make -C "$SRC" O="$BUILD" -j4 DEVICE_TREE="$DEVICE_TREE" \
+                > stage8/out/compile.log 2>&1; then
+            tail -n 120 stage8/out/compile.log
+            exit 1
+          fi
+          test -s "$BUILD/u-boot"
+          # Confirm the device tree packed into this test build really is
+          # SM8150 MTP. NEVER mistake it for nabu based on CPU family alone.
+          test -s "$BUILD/u-boot.dtb"
+          fdtget -t s "$BUILD/u-boot.dtb" / compatible \
+            | tee stage8/out/reference-dtb-compatible.txt
+          grep -q 'qcom,sm8150-mtp' stage8/out/reference-dtb-compatible.txt
+          ! grep -q 'xiaomi,nabu' stage8/out/reference-dtb-compatible.txt
+          file "$BUILD/u-boot"
+          file "$BUILD/u-boot" | grep -Eq 'ARM aarch64|ARM64|aarch64'
+          sha256sum "$BUILD/u-boot" | awk '{ print $1 "  (host-built U-Boot ELF, NOT distributed)" }' \
+            > stage8/out/uboot-elf-hash.txt
+          echo 'No U-Boot executable or boot image may be uploaded.'
+
+      - name: Capture diagnostics only
+        if: always()
+        run: |
+          mkdir -p stage8/out
+          if [ -f stage8/out/compile.log ]; then
+            tail -n 120 stage8/out/compile.log > stage8/out/compile-tail.txt
+          else
+            printf 'Compilation was not started.\n' > stage8/out/compile-tail.txt
+          fi
+          printf 'SM8150 MTP reference only; NOT Xiaomi Pad 5 bootable.\n' \
+            > stage8/out/DO_NOT_BOOT_OR_FLASH.txt
+
+      - name: Upload Kconfig audit and build summary only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nabu-stage8-uboot-host-only-diagnostics
+          path: |
+            stage8/out/usb-log-compile-audit.json
+            stage8/out/reference-dtb-compatible.txt
+            stage8/out/uboot-elf-hash.txt
+            stage8/out/compile-tail.txt
+            stage8/out/DO_NOT_BOOT_OR_FLASH.txt
+          if-no-files-found: warn
+          retention-days: 7
