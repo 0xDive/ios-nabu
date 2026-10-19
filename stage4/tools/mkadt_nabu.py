@@ -7,6 +7,7 @@ Never upload the input DTB or generated device-specific report.
 from __future__ import annotations
 import argparse
 import hashlib
+import os
 import json
 import pathlib
 import struct
@@ -122,7 +123,13 @@ def check_dtb(fdt):
     }
 
 
-def make_adt(info):
+def make_adt(info, seed=None):
+    # A real boot needs fresh entropy, never a committed fixed seed.
+    # This *draft* is not bootable until every address has been verified.
+    if seed is None:
+        seed = os.urandom(64)
+    if not isinstance(seed, bytes) or len(seed) != 64:
+        raise ValueError("ADT random-seed must be 64 bytes")
     handles = iter(range(1,1000))
     def handle():
         return {"AAPL,phandle":u32(next(handles))}
@@ -130,7 +137,9 @@ def make_adt(info):
         "dram-base":u64(BASE),
         "dram-size":u64(SIZE),
         "debug-enabled":u32(1),
-        "firmware-version":cstr("nabu-stage4-offline")
+        "random-seed":seed,
+        "firmware-version":cstr("nabu-stage4-offline"),
+        "system-firmware-version":cstr("nabu-stage4-offline")
     }),[make_node("memory-map",handle())])
     cpus = []
     for i,mpidr in enumerate(info["cpu_mpidr"]):
@@ -143,8 +152,13 @@ def make_adt(info):
             "cluster-type":u32(0),
             "die-cluster-id":u32(0),
             "cluster-core-id":u32(i),
+            # Distinct per-core L2 caches / shared L3 for initial
+            # single-core research; must be revisited for real SMP.
+            "l2-cache-id":u32(i),
+            "l3-cache-id":u32(0),
             "state":cstr("running" if i == 0 else "stopped"),
             "timebase-frequency":u32(info["timer_frequency_hz"]),
+            "peripheral-frequency":u32(info["timer_frequency_hz"]),
             "fixed-frequency":u32(info["timer_frequency_hz"])
         })
         cpus.append(make_node(f"cpu{i}",props))
@@ -198,7 +212,7 @@ def main():
             "adt_bytes":len(adt),
             "status":"OFFLINE PROTOTYPE ONLY; NOT BOOTABLE OR TESTED BY XNU",
             "hardware":info,
-            "blockers":["No nabu-specific XNU Mach-O or PlatformExpert",
+            "blockers":["Host-side NABU XNU compiled, but no proven hardware execution or early console",
                         "No ABL-time proven memory placement",
                         "Apple product/iOS service device tree unavailable",
                         "No verified frame buffer or touch driver",
