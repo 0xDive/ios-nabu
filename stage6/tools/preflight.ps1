@@ -40,13 +40,13 @@ try {
   if ([System.Text.Encoding]::ASCII.GetString($header, 0, 8) -ne 'ANDROID!' -or
       [System.BitConverter]::ToUInt32($header, 40) -ne 3) { Fail 'Not Android boot v3' }
 } finally { $fs.Dispose() }
-if ([System.IO.Path]::GetFileName($abs) -cne 'nabu-stage6-handoff.img') {
+if ([System.IO.Path]::GetFileName($abs) -cne 'nabu-stage6-fdt-survey.img') {
   Fail 'Wrong diagnostic image name'
 }
 $shaPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'out\SHA256SUMS.txt'
 if (-not [System.IO.File]::Exists($shaPath)) { Fail 'Missing SHA256SUMS.txt' }
 $shaText = [System.IO.File]::ReadAllText($shaPath)
-if ($shaText -notmatch '(?im)^([a-f0-9]{64})\s+out/nabu-stage6-handoff\.img\s*$') {
+if ($shaText -notmatch '(?im)^([a-f0-9]{64})\s+out/nabu-stage6-fdt-survey\.img\s*$') {
   Fail 'Expected hash entry missing'
 }
 $expected = $Matches[1].ToLowerInvariant()
