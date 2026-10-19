@@ -65,6 +65,37 @@ def fake_board():
         "compatible": b"qcom,pm8150b\0qcom,spmi-pmic\0",
         "status": b"okay\0",
     }, [vbus, typec]))
+    # Public SM8150 Linux DTS supplies Qualcomm GCC and RPMh phandle
+    # references. Validate topology, never assume their clocks are on.
+    gcc_handle = 0x501
+    rpmh_handle = 0x502
+    gcc = node("clock-controller@100000", {
+        "compatible": b"qcom,sm8150-gcc\0",
+        "phandle": words(gcc_handle),
+        "#clock-cells": words(1),
+        "#reset-cells": words(1),
+        "#power-domain-cells": words(1),
+    })
+    rpmh = node("clock-controller@rpmh", {
+        "phandle": words(rpmh_handle),
+        "#clock-cells": words(1),
+    })
+    soc.children.insert(-1, gcc)
+    soc.children.insert(-1, rpmh)
+    w1.props["clock-names"] = (
+        b"cfg_noc\0core\0iface\0sleep\0mock_utmi\0xo\0"
+    )
+    w1.props["clocks"] = words(
+        gcc_handle, 1, gcc_handle, 2, gcc_handle, 3,
+        gcc_handle, 4, gcc_handle, 5, gcc_handle, 6,
+    )
+    w1.props["resets"] = words(gcc_handle, 100)
+    w1.props["power-domains"] = words(gcc_handle, 200)
+    w1.props["assigned-clocks"] = words(gcc_handle, 5, gcc_handle, 2)
+    w1.props["assigned-clock-rates"] = words(19_200_000, 200_000_000)
+    hs.props["clock-names"] = b"ref\0"
+    hs.props["clocks"] = words(rpmh_handle, 1)
+    hs.props["resets"] = words(gcc_handle, 300)
     return root
 
 
@@ -197,7 +228,49 @@ class TypecPowerTests(unittest.TestCase):
         self.assertTrue(result["uboot"]["typec_pm8150b_driver_match_in_inspected_source"])
         self.assertFalse(result["safe_to_boot"])
 
-    def test_does_not_publish_sensitive_dtb_properties(self):
+    def test_qualcomm_clocks_and_reset_phandles_are_decoded(self):
+        result = self.scan()
+        status = result["dtb"]["clock_reset"]
+        self.assertEqual(status["usb1_wrapper_clocks_declared"], 6)
+        self.assertEqual(status["usb1_wrapper_resets_declared"], 1)
+        self.assertEqual(status["usb1_wrapper_power_domains_declared"], 1)
+        self.assertEqual(status["usb1_phy_reference_clocks_declared"], 1)
+        self.assertEqual(status["usb1_phy_resets_declared"], 1)
+        self.assertTrue(status["usb1_declared_19m2_and_200m_clock_rates"])
+        self.assertFalse(status["actual_clock_reset_and_power_state_verified"])
+
+    def test_usb1_missing_clock_dependency_rejected(self):
+        root = fake_board()
+        root.children[0].children[0].props["clocks"] = words(0x501, 1)
+        with self.assertRaisesRegex(ValueError, "dependencies"):
+            self.scan(root)
+
+    def test_usb1_unresolved_reset_provider_rejected(self):
+        root = fake_board()
+        root.children[0].children[0].props["resets"] = words(0x999, 100)
+        with self.assertRaisesRegex(ValueError, "Unresolved resets"):
+            self.scan(root)
+
+    def test_usb1_hsphy_ref_clock_missing_rejected(self):
+        root = fake_board()
+        root.children[0].children[2].props.pop("clocks")
+        with self.assertRaisesRegex(ValueError, "ref clock|Absent/truncated"):
+            self.scan(root)
+
+    def test_bad_assigned_clock_rates_rejected(self):
+        root = fake_board()
+        root.children[0].children[0].props["assigned-clock-rates"] = words(0,0)
+        with self.assertRaisesRegex(ValueError, "assigned-clock-rates"):
+            self.scan(root)
+
+    def test_disabled_usb1_clock_provider_rejected(self):
+        root = fake_board()
+        gcc = root.children[0].children[-3]
+        gcc.props["status"] = b"disabled\0"
+        with self.assertRaisesRegex(ValueError, "Disabled clocks"):
+            self.scan(root)
+
+        def test_does_not_publish_sensitive_dtb_properties(self):
         root = fake_board()
         root.props["serial-number"] = b"PRIVATE_SOC_SERIAL"
         result = self.scan(root)
