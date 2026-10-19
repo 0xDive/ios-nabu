@@ -31,6 +31,39 @@ For the small unit-test suite (does not need a compiler):
 python3 -m unittest discover -s stage8/tests -v
 ```
 
+## Stage 8.1: successful full ARM64 host compilation with public nabu DTB
+
+The next [host-only workflow](../.github/workflows/uboot-nabu-dtb.yml) now
+successfully compiles both the **public** `sm8150-xiaomi-nabu.dts` and a full
+U-Boot ARM64 ELF that embeds the resulting DTB. The public nabu board source
+is pinned to `SeimoDev/linux-xiaomi-nabu` revision
+`4e6d08bb1b467c721e19cd693e4ec7388d982d73`, with matching SM8150
+SoC/PMIC DTSI files; the underlying U-Boot source remains pinned to
+`ece349ade2973e220f524ce59e59711cc919263f`.
+
+[Successful CI run 39322222486](https://github.com/0xDive/ios-nabu/actions/runs/39322222486)
+independently checked the DTB before and after building the ELF:
+`xiaomi,nabu qcom,sm8150`. The output of `file u-boot` identified an ELF64
+AArch64 PIE. A source-hash manifest includes SHA-256 checksums for all six
+public DTS/DTSI input files; no binaries, personal DTBs or firmware blobs
+were uploaded.
+
+**This still does not mean that U-Boot will boot nabu.** The ordinary U-Boot
+make target builds every upstream Qualcomm DTB and the newer nabu SoC DTSI
+caused failures in unrelated reference boards. The Stage 8.1 workflow
+therefore preprocesses/compiles *only* the nabu DTB and uses an **ephemeral,
+host-only** adjustment to `dts/Makefile` to link this prevalidated DTB into
+the experimental ELF. This avoids unrelated board compilation; it is **not**
+a reviewed hardware port, nor a patch shipped to U-Boot.
+
+No device has been booted into U-Boot, no USB logging has been observed from
+this code, no validated loader has been constructed and **nothing can be
+flashed**. Refer to [board-specific USB2/Type-C and ABL blockers](BOARD_GAPS.md)
+and [the follow-up issue](https://github.com/0xDive/ios-nabu/issues/22).
+The config audit's `reference_device_tree` field retains the SM8150 MTP
+baseline label; `nabu-integrated-compatible.txt` in the Stage 8.1 artifacts
+is the *actual* integrated DTS identity.
+
 ## Important distinction: old ABL vs U-Boot Fastboot
 
 Do not run `fastboot oem run`, `fastboot flash`, `fastboot erase`, `fastboot oem console` or `fastboot oem log` against the Xiaomi stock fastboot based on these notes. The console commands documented here concern a **future, independently validated U-Boot USB gadget**, not the stock Xiaomi bootloader.
