@@ -10,10 +10,12 @@
 - [x] Set up reproducible LLVM ARM64 diagnostic build with artifact integrity checks.
 - [x] Build and test a read-only, temporary [Stage 6](../stage6/README.md) ARM64 ABL-time FDT memory probe; it classifies FDT-advertised RAM and known/dynamic reservations (host-side CI success, device outcome pending).
 - [x] Observe an autonomous reset after approximately 8–10 seconds on real nabu with the first Stage 6 image (timing only, no persistent log; see [PR #14](https://github.com/0xDive/ios-nabu/pull/14) for subsequent FDT completeness fix).
-- [ ] Independently verify the newly hardened Stage 6.1 parser on a real nabu (no need to repeat the older image).
+- [x] Observe an approximately 8-second automatic restart with the strengthened Stage 6.1 parser on a real nabu; black screen, no persistent execution trace, no proof of runtime-writable RAM.
 - [ ] Independently verify free RAM at ABL handoff; the FDT alone cannot prove all live firmware allocations.
 - [x] Identify and decode the nabu Android-DTB GENI UART console (`0x00A90000` / GPIO85/86), including clock/pinctrl phandles; add [read-only Stage 7 tools](../stage7/README.md) and CI mocks.
-- [ ] Establish an electrically and firmware-verified early-boot UART or USB logging transport independent of unverified framebuffer addresses. Android-only tty/clock observations are not ABL logs.
+- [x] Host-compile Qualcomm SM8150 U-Boot v2026.07 with the USB ACM and recorded-console options, with Fastboot flash/OEM arbitrary commands and capsule updates disabled ([PR #20](https://github.com/0xDive/ios-nabu/pull/20)).
+- [x] Host-compile publicly sourced Xiaomi Pad 5 DTS/DTB with matching SM8150 SoC/PMIC files and a full ARM64 U-Boot ELF that embeds that DTB. Validate `xiaomi,nabu qcom,sm8150` separately in the DTB and the U-Boot build. [Passing CI](https://github.com/0xDive/ios-nabu/actions/runs/39322222486); **not tested on tablet**.
+- [ ] Establish an electrically and firmware-verified early-boot UART or USB logging transport independent of unverified framebuffer addresses. Building a U-Boot ELF with nabu DTS is not proof of safe USB controller/Type-C role, ROM/ABL ABI, RAM or XNU logging.
 - [x] Compile `kernel.development.nabu` as an ARM64 Mach-O on macOS, using **mechanically adapted SWEET identifiers**, and verify 19 segments and entry VA. ([CI](https://github.com/0xDive/ios-nabu/actions/runs/39295105141))
 - [ ] Replace mechanical identity changes with validated SM8150-specific PlatformExpert and driver implementations.
 - [x] Implement offline-only ADT and `boot_args` v2 schema with independent tests.
