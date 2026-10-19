@@ -21,6 +21,7 @@ The project explores booting an ARM64 XNU kernel on nabu, using a minimal ABL-co
 | Stage 6 / 6.1 — ABL-time FDT memory probe | **Two approximate ~8-second autonomous resets, not a persistent log** | [PR #11](https://github.com/0xDive/ios-nabu/pull/11) implemented read-only static checks. [PR #14](https://github.com/0xDive/ios-nabu/pull/14) rejects missing fixed `/reserved-memory` and was retested on hardware: black screen and reset within roughly 8 seconds (timing uncertain). This is **not proof of writable kernel RAM**. |
 | Stage 7 — Qualcomm UART console discovery | **Host-side research only** | [Read-only DTB/ADB tools](stage7/README.md) inspect UART `0xA90000`, related clocks, IRQ 357 and GPIO85/86. No confirmed electrical access, working early UART, or XNU output. |
 | Stage 8 / 8.1 — U-Boot USB logging research | **Host-side compilation passed; no device test** | [PR #20](https://github.com/0xDive/ios-nabu/pull/20): SM8150 MTP U-Boot ARM64 reference. [PR #21](https://github.com/0xDive/ios-nabu/pull/21): same pinned U-Boot host-compiled as ARM64 ELF with public `xiaomi,nabu` DTB, confirmed by `fdtget` in [CI](https://github.com/0xDive/ios-nabu/actions/runs/39322222486). No verified USB PHY, Type-C, bootloader memory, early USB log or XNU boot. |
+| Stage 9 — compiled nabu DWC3/HS PHY audit | **Host-side passed** | [PR #23](https://github.com/0xDive/ios-nabu/pull/23): compiled public nabu DTB passes USB1 OTG/High-Speed/HS PHY phandle checks and USB2 host-only verification. No device-level USB enumeration. |
 | Stage 5 — actual XNU entry on nabu | **Not demonstrated** | Requires bootloader-time memory proof, trustworthy early logging, a reviewed loader, and platform hardware adaptations. |
 | iOS userland, graphics, touch, network | **Not implemented** | Requires much more platform and driver work. |
 
@@ -42,6 +43,7 @@ Based on a locally inspected user-provided Linux FDT (not uploaded to this repos
 - `stage6/` — **read-only** bare-metal FDT RAM audit using timed PSCI reset outcomes; no XNU or writing to proposed kernel RAM.
 - `stage7/` — read-only UART topology analysis and optional Android sysfs/debugfs status; no bare-metal UART register writes.
 - `stage8/` — compile-only U-Boot USB logging experiments, with pinned public nabu Linux DTS and disabled flashing/OEM command options; [board compatibility limits](stage8/BOARD_GAPS.md).
+- `stage9/` — validated compiled nabu DWC3 USB2/OTG/HS PHY graph, read-only vendor-DTB inspection and tests; no hardware USB writes.
 - `xnu/` — pinned macOS XNU compile experiment, preliminary ADT, ARM64 boot_args v2 and [Stage 5 offline handoff](xnu/STAGE5.md) planning tools; **nothing bootable**.
 - `docs/` — porting notes, safety limits, roadmap.
 - `.github/workflows/` — host-side Python tests and LLVM ARM64 build checks.
