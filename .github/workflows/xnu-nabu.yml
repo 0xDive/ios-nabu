@@ -98,6 +98,7 @@ jobs:
           xcrun lipo -archs "$KERNEL" | tee xnu/out/kernel-architectures.txt
           grep -qw arm64 xnu/out/kernel-architectures.txt
           xcrun otool -hv "$KERNEL" | tee xnu/out/macho-header.txt
+          xcrun otool -l "$KERNEL" > xnu/out/macho-loadcommands.txt
           python3 stage4/tools/inspect_kernel.py "$KERNEL" --out xnu/out/macho-report.json
           shasum -a 256 "$KERNEL" > xnu/out/validated-kernel-sha256.txt
 
@@ -128,6 +129,7 @@ jobs:
             xnu/out/staged-patches.json
             xnu/out/kernel-architectures.txt
             xnu/out/macho-header.txt
+            xnu/out/macho-loadcommands.txt
             xnu/out/macho-report.json
             xnu/out/validated-kernel-sha256.txt
             xnu/out/build-tail.txt
