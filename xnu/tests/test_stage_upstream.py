@@ -84,6 +84,20 @@ class StageTests(unittest.TestCase):
     def test_different_case_mapping(self):
         self.assertEqual(stage_upstream.convert_text("SWEET Sweet sweet"), "NABU Nabu nabu")
 
+    def test_preserves_non_utf8_patch_lines_and_binary_blocks(self):
+        raw = (
+            b"diff --git a/SweetCPU.cpp b/SweetCPU.cpp\n"
+            b"+#ifdef SWEET\n"
+            b"+\xffSWEET\n"
+            b"GIT binary patch\n"
+            b"SWEET\n"
+        )
+        transformed = stage_upstream.convert_patch_bytes(raw)
+        self.assertIn(b"diff --git a/NabuCPU.cpp b/NabuCPU.cpp\n", transformed)
+        self.assertIn(b"+#ifdef NABU\n", transformed)
+        self.assertIn(b"+\xffSWEET\n", transformed)
+        self.assertTrue(transformed.endswith(b"GIT binary patch\nSWEET\n"))
+
 
 if __name__ == "__main__":
     unittest.main()
