@@ -22,6 +22,32 @@ The `pinctrl-0` phandle of this console resolves to `qupv3_se12_2uart_active`, w
 
 These facts **do not prove** any UART is already enabled or clocked when ABL enters our bare-metal image; that the pins are available on exposed test points; or that voltage, signal routing, pin mux and clock configuration are correct. The `0x00C8C000` high-speed serial engine may be in use by another peripheral and is not a default debug path.
 
+## Stage 7 reproducible read-only inventory
+
+The [Stage 7 tools](../stage7/README.md) now parse Qualcomm GENI UART
+topology from the private device FDT, resolve clock and pinctrl phandles,
+and optionally query currently running Android over ADB. The ADB collector
+does **not** mount debugfs, read full bootargs/dmesg, toggle GPIOs or access
+MMIO. If any kernel debug information is unavailable, it reports an unknown
+state rather than trying to enable the interface.
+
+The host-side analyzer has been executed on the original user-provided
+`nabu.dtb`. It successfully found three serial nodes: console
+`0x00A90000` (`ok`, GPIO85/86), high-speed port `0x00C8C000`
+(`ok`) and port `0x00A84000` (`disabled`). For the console, the
+FDT's `/soc/qcom,gcc` clock indices are `0x69` (`se-clk`),
+`0x7b` (`m-ahb`) and `0x7c` (`s-ahb`). This is decoded FDT
+topology, **not clock-on evidence at ABL handoff**.
+
+Mainline Linux SM8150 describes address `0x00A90000` as
+`qcom,geni-debug-uart`, with `GCC_QUPV3_WRAP1_S4_CLK` and SPI 357.
+The vendor DTB instead describes `qcom,msm-geni-console` plus a separate
+bus-clock arrangement; changing the `compatible` string would not
+initialize clocks or prove the registers/pin layout can be safely used by
+XNU. See the mainline
+[SM8150 DTS](https://code.googlesource.com/linux/torvalds/linux/+/9f7853d7609d59172eecfc5e7ccf503bc1b690bd/arch/arm64/boot/dts/qcom/sm8150.dtsi)
+and [GENI serial implementation](https://code.googlesource.com/linux/torvalds/linux/+/23eb7901811a06805ec7d6e766dd82f083d03204/drivers/tty/serial/qcom_geni_serial.c).
+
 ## Safe bring-up requirements
 
 1. Establish *independently* whether an accessible and electrically suitable UART TX/GND pair exists on the physical tablet. Do **not** connect USB-UART adapters to unspecified motherboard pads. Determine I/O voltage first; never connect 5 V or feed an unverified voltage into a test pad.
