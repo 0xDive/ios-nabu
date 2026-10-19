@@ -84,6 +84,79 @@ def supply_phandle(node: Node, key: str, handles: dict):
     return ident, provider
 
 
+def resolve_specs(node: Node, property: str, width_property: str,
+                  handles: dict, minimum: int, maximum: int) -> int:
+    """Validate DTB phandle+args clock/reset/power specs without reading MMIO."""
+    raw = node.props.get(property)
+    if raw is None or len(raw) == 0 or len(raw) % 4:
+        raise ValueError(f"Absent/truncated FDT {property} specifiers")
+    words = [int.from_bytes(raw[i:i+4], "big") for i in range(0, len(raw), 4)]
+    at = 0
+    count = 0
+    while at < len(words):
+        key = words[at]
+        at += 1
+        if key not in handles:
+            raise ValueError(f"Unresolved {property} provider phandle")
+        path, provider, ancestors = handles[key]
+        if not effective_status(provider, ancestors):
+            raise ValueError(f"Disabled {property} provider")
+        args = one_word(provider, width_property)
+        if args > 3 or at + args > len(words):
+            raise ValueError(f"Malformed {property} provider argument count")
+        at += args
+        count += 1
+        if count > maximum:
+            raise ValueError(f"Too many {property} dependencies")
+    if count < minimum:
+        raise ValueError(f"Not enough {property} dependencies")
+    return count
+
+
+def validate_clocks_and_resets(root: Node, entries, handles, usb_path: str,
+                               phy_path: str) -> dict:
+    nodes = {path:node for path,node,parent,ancestors in entries}
+    dwc = nodes[usb_path]
+    wrapper = nodes.get(usb_path.rsplit("/", 1)[0])
+    hs_phy = nodes[phy_path]
+    if wrapper is None:
+        raise ValueError("DWC3 Qualcomm USB wrapper missing")
+
+    expected_names = ["cfg_noc", "core", "iface", "sleep", "mock_utmi", "xo"]
+    if strings(wrapper.props.get("clock-names")) != expected_names:
+        raise ValueError("Unexpected USB1 Qualcomm wrapper clock-names")
+    wrapper_clocks = resolve_specs(wrapper,"clocks","#clock-cells",
+                                   handles,minimum=6,maximum=6)
+    wrapper_resets = resolve_specs(wrapper,"resets","#reset-cells",
+                                   handles,minimum=1,maximum=1)
+    power_domains = resolve_specs(wrapper,"power-domains",
+                                  "#power-domain-cells",handles,1,1)
+    if strings(hs_phy.props.get("clock-names")) != ["ref"]:
+        raise ValueError("USB1 HS PHY needs the declared ref clock")
+    hs_clock = resolve_specs(hs_phy,"clocks","#clock-cells",
+                             handles,1,1)
+    hs_reset = resolve_specs(hs_phy,"resets","#reset-cells",
+                             handles,1,1)
+    # Frequency constraints in the public DTS are NOT readings.
+    assigned = resolve_specs(wrapper,"assigned-clocks","#clock-cells",
+                             handles,2,2)
+    rates = wrapper.props.get("assigned-clock-rates")
+    if rates is None or len(rates) != 8 or [
+        int.from_bytes(rates[i:i+4], "big") for i in (0,4)
+    ] != [19_200_000, 200_000_000]:
+        raise ValueError("USB1 assigned-clock-rates do not match pinned DTS")
+    return {
+        "usb1_wrapper_clocks_declared": wrapper_clocks,
+        "usb1_wrapper_resets_declared": wrapper_resets,
+        "usb1_wrapper_power_domains_declared": power_domains,
+        "usb1_phy_reference_clocks_declared": hs_clock,
+        "usb1_phy_resets_declared": hs_reset,
+        "usb1_wrapper_assigned_clocks_declared": assigned,
+        "usb1_declared_19m2_and_200m_clock_rates": True,
+        "actual_clock_reset_and_power_state_verified": False,
+    }
+
+
 def verify_typec_graph(entries, handles, usb_path: str, typec_path: str) -> None:
     # The public nabu DTS ties USB1's HS endpoint to the PM8150B Type-C
     # role-switch endpoint in both directions.
@@ -152,7 +225,10 @@ def validate_board(root: Node) -> dict:
     # VBUS is available in the board's device tree, but this does NOT
     # authorize toggling its PMIC source regulator in peripheral mode.
     verify_typec_graph(entries, handles, dwc[USB1]["path"], tpath)
+    clock_reset = validate_clocks_and_resets(
+        root, entries, handles, dwc[USB1]["path"], phy_path)
     return {
+        "clock_reset": clock_reset,
         "usb1_otg_hsphy_dtb_contract": bool(usb["passes_compiled_dtb_contract"]),
         "pm8150b_typec_enabled_in_public_dtb": True,
         "pm8150b_vbus_source_regulator_enabled_in_public_dtb": True,
