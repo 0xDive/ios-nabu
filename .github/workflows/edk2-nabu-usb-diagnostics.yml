@@ -1,9 +1,9 @@
-name: Build nabu EDK2 USB diagnostics (experimental)
+name: Build nabu EDK2 image-protection A/B (experimental)
 
 on:
   push:
     branches:
-      - experiment/nabu-pci-load-probe
+      - experiment/nabu-image-protection-off
     paths:
       - stage12/uefi-usb/**
       - .github/workflows/edk2-nabu-usb-diagnostics.yml
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: nabu-pci-load-probe-${{ github.ref }}
+  group: nabu-image-protection-off-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -65,11 +65,21 @@ jobs:
           dsc = Path("edk2-msm/Platform/Xiaomi/sm8150/nabu.dsc")
           original = dsc.read_text()
           assert "NabuUsbDiag.inf" not in original
+          # The *only* firmware behavior change vs the crashing diagnostic 05:
+          # disable FV-image PE/COFF section R/O+NX memory protections.
+          # Do not alter the DXE driver order, chipset MMIO, PMIC or memory map.
+          section = "[PcdsFixedAtBuild.common]\n"
+          pcd = "  gEfiMdeModulePkgTokenSpaceGuid.PcdImageProtectionPolicy|0x00000000\n"
+          assert original.count(section) == 1, "nabu fixed-build PCD section changed upstream"
+          assert "PcdImageProtectionPolicy" not in original, "Unexpected pre-existing override"
+          modified = original.replace(section, section + pcd, 1)
+          assert modified.count(pcd) == 1
           dsc.write_text(
-              original
+              modified
               + "\n[Components.common]\n"
               + "  Platform/Xiaomi/sm8150/NabuUsbDiag/NabuUsbDiag.inf\n"
           )
+          print("nabu DSC PcdImageProtectionPolicy overridden to 0 (DEBUG ONLY).")
 
           fdf = Path("edk2-msm/Platform/Qualcomm/sm8150/sm8150.fdf")
           original = fdf.read_text()
@@ -97,6 +107,31 @@ jobs:
           cd edk2-msm
           ./build.sh --device nabu --release DEBUG --outputdir "$GITHUB_WORKSPACE/out"
 
+      - name: Assert image-protection override reached DxeCore build
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib
+          import re
+          base = pathlib.Path("out/workspace/Build/nabu/DEBUG_CLANG38/AARCH64/MdeModulePkg/Core/Dxe/DxeMain")
+          headers = list(base.rglob("AutoGen.h"))
+          assert headers, f"No DxeCore AutoGen.h under {base}"
+          found = []
+          for header in headers:
+              src = header.read_text(errors="replace")
+              matches = re.findall(
+                  r"(?m)^\s*#\s*define\s+_PCD_VALUE_PcdImageProtectionPolicy\s+([^\s]+)", src
+              )
+              for match in matches:
+                  found.append((header, match))
+          assert found, "PcdImageProtectionPolicy fixed-at-build macro not found in DxeCore AutoGen.h"
+          for path, value in found:
+              numeric = re.sub(r"[uUlL]+$", "", value.strip("()"))
+              assert int(numeric, 0) == 0, f"PCD override not active in {path}: {value}"
+              print(f"Verified DxeCore: _PCD_VALUE_PcdImageProtectionPolicy={value} ({path})")
+          PY
+
       - name: Check image and EFI binary
         shell: bash
         run: |
@@ -117,7 +152,16 @@ jobs:
           test -s "$EFI"
           file "$EFI"
           printf 'Source: edk2-porting/edk2-msm %s\n' "$UPSTREAM_SHA" > out/README-FIRST.txt
+          printf 'Variant: DIAG 05 with PcdImageProtectionPolicy=0 (DEBUG ONLY)\n' >> out/README-FIRST.txt
           cat >> out/README-FIRST.txt <<'EOF'
+          EXPERIMENTAL DIAGNOSTIC 06 - NOT SAFE FOR PRODUCTION.
+          The only firmware behavior difference from CRASHING DIAG 05 is:
+          PcdImageProtectionPolicy=0. PE/COFF FV-image memory R/O and NX
+          protection is DISABLED. Memory isolation is weakened.
+          Original Qualcomm driver order and image binaries are retained.
+          Do not use as a normal UEFI firmware or install permanently.
+          If it boots, this is a clue for MMU/image permission investigation,
+          NOT A USB FIX. If it crashes, return to DIAG 04.
           Experimental Xiaomi Pad 5 (nabu) EDK2 USB diagnostic.
           EFI Shell auto-runs startup.nsh and prints PCI root bridge, PCI IO,
           USB2 HC, legacy USB HC, USB IO and USBFN protocol counts, as well as
@@ -139,7 +183,7 @@ jobs:
       - name: Upload experimental image
         uses: actions/upload-artifact@v4
         with:
-          name: nabu-edk2-pci-load-only-05
+          name: nabu-edk2-imageprot-off-06
           path: |
             out/boot-nabu.img
             out/SHA256SUMS
