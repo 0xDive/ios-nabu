@@ -1,0 +1,40 @@
+## Experimental read-only USB / host controller diagnostic for Xiaomi nabu
+# SPDX-License-Identifier: BSD-2-Clause-Patent
+
+[Defines]
+  INF_VERSION                    = 0x00010006
+  BASE_NAME                      = NabuUsbDiag
+  FILE_GUID                      = 2A1A47BD-DA2D-475C-A52A-6D698BFE122C
+  MODULE_TYPE                    = UEFI_APPLICATION
+  VERSION_STRING                 = 4.0
+  ENTRY_POINT                    = UefiMain
+
+[Sources]
+  NabuUsbDiag.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  UefiApplicationEntryPoint
+  UefiLib
+  UefiBootServicesTableLib
+  MemoryAllocationLib
+  BaseMemoryLib
+  DevicePathLib
+
+[Protocols]
+  gEfiUsb2HcProtocolGuid
+  gEfiUsbHcProtocolGuid
+  gEfiUsbFunctionIoProtocolGuid
+  gEfiUsbIoProtocolGuid
+  gEfiPciIoProtocolGuid
+  gEfiPciRootBridgeIoProtocolGuid
+  gEfiPciHostBridgeResourceAllocationProtocolGuid
+  gEfiFirmwareVolume2ProtocolGuid
+  gEfiMetronomeArchProtocolGuid
+  gEfiPcdProtocolGuid
+  gEfiDriverBindingProtocolGuid
+  gEfiLoadedImageProtocolGuid
+  gEfiSimpleTextInProtocolGuid
+  gEfiSimpleTextInputExProtocolGuid
