@@ -123,6 +123,8 @@ jobs:
           USB2 HC, legacy USB HC, USB IO and USBFN protocol counts, as well as
           firmware-loaded driver images and driver binding registrations.
           A loaded image or binding is NOT evidence that the controller started.
+          Diagnostic 03 also checks the PciHostBridge dependency protocols
+          (Metronome + PCD) and reads PciHostBridge's firmware volume file.
           DO NOT FLASH any partition. Only test with temporary fastboot boot.
           The application enumerates protocol handles and reads host port status.
           It does not write to UFS, partitions, UEFI variables or hardware registers.
@@ -134,7 +136,7 @@ jobs:
       - name: Upload experimental image
         uses: actions/upload-artifact@v4
         with:
-          name: nabu-edk2-usb-diag-02
+          name: nabu-edk2-usb-diag-03
           path: |
             out/boot-nabu.img
             out/SHA256SUMS

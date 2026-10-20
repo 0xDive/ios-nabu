@@ -6,7 +6,7 @@
   BASE_NAME                      = NabuUsbDiag
   FILE_GUID                      = 2A1A47BD-DA2D-475C-A52A-6D698BFE122C
   MODULE_TYPE                    = UEFI_APPLICATION
-  VERSION_STRING                 = 2.0
+  VERSION_STRING                 = 3.0
   ENTRY_POINT                    = UefiMain
 
 [Sources]
@@ -30,6 +30,10 @@
   gEfiUsbIoProtocolGuid
   gEfiPciIoProtocolGuid
   gEfiPciRootBridgeIoProtocolGuid
+  gEfiPciHostBridgeResourceAllocationProtocolGuid
+  gEfiFirmwareVolume2ProtocolGuid
+  gEfiMetronomeArchProtocolGuid
+  gEfiPcdProtocolGuid
   gEfiDriverBindingProtocolGuid
   gEfiLoadedImageProtocolGuid
   gEfiSimpleTextInProtocolGuid

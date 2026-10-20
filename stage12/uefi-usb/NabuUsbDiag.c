@@ -17,6 +17,10 @@
 #include <Protocol/UsbIo.h>
 #include <Protocol/PciIo.h>
 #include <Protocol/PciRootBridgeIo.h>
+#include <Protocol/PciHostBridgeResourceAllocation.h>
+#include <Protocol/FirmwareVolume2.h>
+#include <Protocol/Metronome.h>
+#include <Protocol/PiPcd.h>
 #include <Protocol/DriverBinding.h>
 #include <Protocol/LoadedImage.h>
 #include <Protocol/SimpleTextIn.h>
@@ -183,6 +187,73 @@ ReportLoadedDrivers (VOID)
 
 STATIC
 VOID
+ReportPciFirmwareFile (VOID)
+{
+  EFI_STATUS                      Status;
+  EFI_STATUS                      OpenStatus;
+  EFI_HANDLE                      *Handles;
+  EFI_FIRMWARE_VOLUME2_PROTOCOL   *Fv;
+  EFI_FV_FILETYPE                 FileType;
+  EFI_FV_FILE_ATTRIBUTES          FileAttributes;
+  VOID                            *Data;
+  UINTN                           FileSize;
+  UINT32                          Authentication;
+  UINTN                           Count;
+  UINTN                           Index;
+
+  Print (L"\r\n PciHostBridge image in firmware volume:\r\n");
+  Handles = NULL;
+  Count = 0;
+  Status = gBS->LocateHandleBuffer (
+                  ByProtocol,
+                  &gEfiFirmwareVolume2ProtocolGuid,
+                  NULL,
+                  &Count,
+                  &Handles);
+  if (EFI_ERROR (Status)) {
+    Print (L" FV2 unavailable: %r\r\n", Status);
+    return;
+  }
+
+  for (Index = 0; Index < Count && Index < 4; Index++) {
+    Fv = NULL;
+    OpenStatus = gBS->HandleProtocol (
+                        Handles[Index],
+                        &gEfiFirmwareVolume2ProtocolGuid,
+                        (VOID **)&Fv);
+    if (EFI_ERROR (OpenStatus) || Fv == NULL) {
+      Print (L"  FV[%u] open: %r\r\n", (UINT32)Index, OpenStatus);
+      continue;
+    }
+
+    Data = NULL;
+    FileSize = 0;
+    FileType = (EFI_FV_FILETYPE)0;
+    FileAttributes = 0;
+    Authentication = 0;
+    Status = Fv->ReadFile (
+                   Fv,
+                   &mDrivers[7].FileGuid,
+                   &Data,
+                   &FileSize,
+                   &FileType,
+                   &FileAttributes,
+                   &Authentication);
+    Print (L"  FV[%u] PCI file: %r size=%u\r\n",
+           (UINT32)Index, Status, (UINT32)FileSize);
+
+    if (Data != NULL) {
+      FreePool (Data);
+    }
+  }
+
+  if (Handles != NULL) {
+    FreePool (Handles);
+  }
+}
+
+STATIC
+VOID
 ReportHostPort (VOID)
 {
   EFI_STATUS            Status;
@@ -245,7 +316,12 @@ UefiMain (
   (VOID)ImageHandle;
   (VOID)SystemTable;
 
-  Print (L"\r\n=== NABU USB DIAG 02: READ ONLY ===\r\n");
+  Print (L"\r\n=== NABU USB DIAG 03: READ ONLY ===\r\n");
+  Print (L"PCI bridge .depex = METRONOME AND PCD\r\n");
+  ProtocolCount (L"METRONOME (REQUIRED)", &gEfiMetronomeArchProtocolGuid);
+  ProtocolCount (L"PCD (REQUIRED)", &gEfiPcdProtocolGuid);
+  ProtocolCount (L"PCI_HOST_RESOURCE", &gEfiPciHostBridgeResourceAllocationProtocolGuid);
+  ProtocolCount (L"FIRMWARE_VOLUME2", &gEfiFirmwareVolume2ProtocolGuid);
   ProtocolCount (L"PCI_ROOT_BRIDGE_IO", &gEfiPciRootBridgeIoProtocolGuid);
   ProtocolCount (L"PCI_IO", &gEfiPciIoProtocolGuid);
   ProtocolCount (L"USB2_HC", &gEfiUsb2HcProtocolGuid);
@@ -257,6 +333,7 @@ UefiMain (
   ProtocolCount (L"TEXT_INPUT_EX", &gEfiSimpleTextInputExProtocolGuid);
 
   ReportLoadedDrivers ();
+  ReportPciFirmwareFile ();
   ReportHostPort ();
 
   Print (L"=== PHOTO THIS SCREEN ===\r\n");
