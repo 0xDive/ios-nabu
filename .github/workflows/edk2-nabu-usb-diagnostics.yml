@@ -1,9 +1,9 @@
-name: Build nabu EDK2 USB diagnostics (experimental)
+name: Analyze nabu early ArmCpuDxe exception (CI only)
 
 on:
   push:
     branches:
-      - experiment/nabu-pci-load-probe
+      - experiment/nabu-cpu-exception-symbols
     paths:
       - stage12/uefi-usb/**
       - .github/workflows/edk2-nabu-usb-diagnostics.yml
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: nabu-pci-load-probe-${{ github.ref }}
+  group: nabu-cpu-exception-symbols-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -97,52 +97,61 @@ jobs:
           cd edk2-msm
           ./build.sh --device nabu --release DEBUG --outputdir "$GITHUB_WORKSPACE/out"
 
-      - name: Check image and EFI binary
+      - name: Extract exact ArmCpuDxe and DxeCore debug symbols
         shell: bash
         run: |
           set -euo pipefail
-          test -s out/boot-nabu.img
-          python3 - <<'PY'
-          from pathlib import Path
-          from struct import unpack_from
+          SYM_BASE="$GITHUB_WORKSPACE/out/workspace/Build/nabu/DEBUG_CLANG38/AARCH64"
+          CPU="$SYM_BASE/ArmPkg/Drivers/CpuDxe/CpuDxe/DEBUG/ArmCpuDxe"
+          CORE="$SYM_BASE/MdeModulePkg/Core/Dxe/DxeMain/DEBUG/DxeCore"
+          DEST="$GITHUB_WORKSPACE/out/offline-symbols"
+          mkdir -p "$DEST"
+          for stem in "$CPU" "$CORE"; do
+            test -s "$stem.debug"
+            test -s "$stem.dll"
+            cp "$stem.debug" "$DEST/"
+            cp "$stem.dll" "$DEST/"
+          done
+          test -s "$GITHUB_WORKSPACE/out/boot-nabu.img"
 
-          image = Path("out/boot-nabu.img").read_bytes()
-          assert image.startswith(b"ANDROID!"), "Missing Android boot header"
-          assert unpack_from("<I", image, 8)[0] != 0, "Empty kernel field"
-          assert unpack_from("<I", image, 40)[0] == 3, "Expected v3 boot header"
-          print("Android boot image v3 recognized.")
-          PY
-          EFI="$(find out/workspace/Build -iname 'NabuUsbDiag.efi' -type f -print -quit)"
-          test -n "$EFI"
-          test -s "$EFI"
-          file "$EFI"
-          printf 'Source: edk2-porting/edk2-msm %s\n' "$UPSTREAM_SHA" > out/README-FIRST.txt
-          cat >> out/README-FIRST.txt <<'EOF'
-          Experimental Xiaomi Pad 5 (nabu) EDK2 USB diagnostic.
-          EFI Shell auto-runs startup.nsh and prints PCI root bridge, PCI IO,
-          USB2 HC, legacy USB HC, USB IO and USBFN protocol counts, as well as
-          firmware-loaded driver images and driver binding registrations.
-          A loaded image or binding is NOT evidence that the controller started.
-          Diagnostic 05 attempts RAM-only LoadImage() of the PCI host bridge PE32
-          and then UnloadImage(), strictly without calling StartImage(),
-          ConnectController() or DriverBinding.Start(). The test allocates RAM
-          and temporarily installs an EFI image handle. Hardware is not initialized.
-          DO NOT FLASH any partition. Only test with temporary fastboot boot.
-          The application enumerates protocol handles and reads host port status.
-          It does not write to UFS, partitions, UEFI variables or hardware registers.
-          It does load/unload the candidate PCI image into/from RAM without executing it.
-          If no diagnostic is shown, firmware FV Shell startup path may differ.
-          EOF
-          (cd out && sha256sum boot-nabu.img > SHA256SUMS)
-          cat out/SHA256SUMS
+          {
+            echo "=== nabu pre-Shell crash: host-only symbolization ==="
+            echo "No boot image is published by this workflow."
+            echo "Upstream EDK2-MSM: $UPSTREAM_SHA"
+            echo "Observed ELR: 0x13FE0C440 (ESR 0x02000000 / EC 0)"
+            echo "Suspected image RVA ~0x2440; exact PE/ELF base shift unverified."
+            echo
+            for ITEM in "$CPU" "$CORE"; do
+              FILE_NAME="$(basename "$ITEM")"
+              echo "=== $FILE_NAME binary layout ==="
+              aarch64-linux-gnu-readelf -h "$ITEM.dll" | grep -E 'Class:|Machine:|Entry point address:|Type:'
+              aarch64-linux-gnu-readelf -WS "$ITEM.dll" | grep -E ' \\.text | \\.data | \\.rodata ' || true
+              echo "--- raw ELF symbol lookups, +/-0x1000 PE RVA candidates ---"
+              if [ "$FILE_NAME" = ArmCpuDxe ]; then
+                TARGETS=(0x1440 0x2340 0x2430 0x2434 0x2440 0x2444 0x3440 0x134C 0x34C 0x234C)
+              else
+                TARGETS=(0x67AC 0x87AC 0x77AC 0x97AC 0x8C18 0x7C18 0x9C18 0x1034 0x1134 0x2034)
+              fi
+              for addr in "${TARGETS[@]}"; do
+                echo "ELF $FILE_NAME offset $addr:"
+                aarch64-linux-gnu-addr2line --functions --inlines --demangle -e "$ITEM.debug" "$addr" || true
+              done
+            done
+          } | tee "$DEST/REPORT.txt"
 
-      - name: Upload experimental image
+          aarch64-linux-gnu-nm -an "$CPU.debug" > "$DEST/ArmCpuDxe-nm.txt"
+          aarch64-linux-gnu-nm -an "$CORE.debug" > "$DEST/DxeCore-nm.txt"
+          aarch64-linux-gnu-objdump -d -l --start-address=0x1000 --stop-address=0x4500 "$CPU.dll" > "$DEST/ArmCpuDxe-disasm.txt"
+          aarch64-linux-gnu-objdump -d -l --start-address=0x5000 --stop-address=0xb000 "$CORE.dll" > "$DEST/DxeCore-disasm.txt"
+          (cd "$DEST" && sha256sum *.debug *.dll > SHA256SUMS)
+          echo "=== nearby ArmCpuDxe ELF symbols ==="
+          grep -iE 'ArmReplaceLive|ReplaceTableEntry|ArmSetMemory|CpuSetMemory|MemoryAttributes|ArmMmu|EnableMmu|DisableMmu' "$DEST/ArmCpuDxe-nm.txt" | head -n 35 || true
+          echo "=== layout report generated (no device boot) ==="
+
+      - name: Upload offline crash symbols ONLY
         uses: actions/upload-artifact@v4
         with:
-          name: nabu-edk2-pci-load-only-05
-          path: |
-            out/boot-nabu.img
-            out/SHA256SUMS
-            out/README-FIRST.txt
+          name: nabu-armcpu-exception-symbols
+          path: out/offline-symbols/
           if-no-files-found: error
           retention-days: 14
