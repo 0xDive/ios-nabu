@@ -20,7 +20,7 @@
   UefiLib
   UefiBootServicesTableLib
   MemoryAllocationLib
-  BaseLib
+  BaseMemoryLib
   DevicePathLib
 
 [Protocols]
