@@ -1,0 +1,157 @@
+name: Analyze nabu early ArmCpuDxe exception (CI only)
+
+on:
+  push:
+    branches:
+      - experiment/nabu-cpu-exception-symbols
+    paths:
+      - stage12/uefi-usb/**
+      - .github/workflows/edk2-nabu-usb-diagnostics.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nabu-cpu-exception-symbols-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      UPSTREAM_SHA: e1952621f419f8db60ed28271264e1b5184c571d
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Checkout diagnostic overlays
+        uses: actions/checkout@v4
+
+      - name: Install EDK2 dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential uuid-dev iasl nasm git gettext clang llvm \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            python-is-python3 python3-pil python3-git python3-setuptools \
+            device-tree-compiler abootimg bc bison flex libssl-dev \
+            curl cpio gzip xz-utils file
+
+      - name: Checkout exact upstream EDK2 and dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init -q edk2-msm
+          git -C edk2-msm remote add origin https://github.com/edk2-porting/edk2-msm.git
+          git -C edk2-msm fetch --depth 1 origin "$UPSTREAM_SHA"
+          git -C edk2-msm checkout --detach -q FETCH_HEAD
+          test "$(git -C edk2-msm rev-parse HEAD)" = "$UPSTREAM_SHA"
+          git -C edk2-msm submodule update --init --recursive --depth 1 --jobs 4
+
+      - name: Include read-only UEFI diagnostics and firmware-volume startup script
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEST=edk2-msm/Platform/Xiaomi/sm8150/NabuUsbDiag
+          mkdir -p "$DEST"
+          cp stage12/uefi-usb/NabuUsbDiag.c "$DEST/"
+          cp stage12/uefi-usb/NabuUsbDiag.inf "$DEST/"
+          cp stage12/uefi-usb/startup.nsh "$DEST/"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          dsc = Path("edk2-msm/Platform/Xiaomi/sm8150/nabu.dsc")
+          original = dsc.read_text()
+          assert "NabuUsbDiag.inf" not in original
+          dsc.write_text(
+              original
+              + "\n[Components.common]\n"
+              + "  Platform/Xiaomi/sm8150/NabuUsbDiag/NabuUsbDiag.inf\n"
+          )
+
+          fdf = Path("edk2-msm/Platform/Qualcomm/sm8150/sm8150.fdf")
+          original = fdf.read_text()
+          marker = "[FV.FVMAIN_COMPACT]"
+          assert original.count(marker) == 1
+          assert "NabuUsbDiag.inf" not in original
+          inject = """
+            # Nabu USB protocol inventory and read-only Shell startup script
+            INF Platform/Xiaomi/sm8150/NabuUsbDiag/NabuUsbDiag.inf
+            FILE FREEFORM = 2A1A47BD-DA2D-475C-A52A-6D698BFE122D {
+              SECTION RAW = Platform/Xiaomi/sm8150/NabuUsbDiag/startup.nsh
+              SECTION UI = "startup.nsh"
+            }
+
+          """
+          fdf.write_text(original.replace(marker, inject + marker, 1))
+          print("Overlay integrated into nabu DSC and SM8150 FV (no upstream patch).")
+          PY
+
+      - name: Build nabu DEBUG image
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cd edk2-msm
+          ./build.sh --device nabu --release DEBUG --outputdir "$GITHUB_WORKSPACE/out"
+
+      - name: Extract exact ArmCpuDxe and DxeCore debug symbols
+        shell: bash
+        run: |
+          set -euo pipefail
+          SYM_BASE="$GITHUB_WORKSPACE/out/workspace/Build/nabu/DEBUG_CLANG38/AARCH64"
+          CPU="$SYM_BASE/ArmPkg/Drivers/CpuDxe/CpuDxe/DEBUG/ArmCpuDxe"
+          CORE="$SYM_BASE/MdeModulePkg/Core/Dxe/DxeMain/DEBUG/DxeCore"
+          DEST="$GITHUB_WORKSPACE/out/offline-symbols"
+          mkdir -p "$DEST"
+          for stem in "$CPU" "$CORE"; do
+            test -s "$stem.debug"
+            test -s "$stem.dll"
+            cp "$stem.debug" "$DEST/"
+            cp "$stem.dll" "$DEST/"
+          done
+          test -s "$GITHUB_WORKSPACE/out/boot-nabu.img"
+
+          {
+            echo "=== nabu pre-Shell crash: host-only symbolization ==="
+            echo "No boot image is published by this workflow."
+            echo "Upstream EDK2-MSM: $UPSTREAM_SHA"
+            echo "Observed ELR: 0x13FE0C440 (ESR 0x02000000 / EC 0)"
+            echo "Suspected image RVA ~0x2440; exact PE/ELF base shift unverified."
+            echo
+            for ITEM in "$CPU" "$CORE"; do
+              FILE_NAME="$(basename "$ITEM")"
+              echo "=== $FILE_NAME binary layout ==="
+              aarch64-linux-gnu-readelf -h "$ITEM.dll" | grep -E 'Class:|Machine:|Entry point address:|Type:'
+              aarch64-linux-gnu-readelf -WS "$ITEM.dll" | grep -E ' \\.text | \\.data | \\.rodata ' || true
+              echo "--- raw ELF symbol lookups, +/-0x1000 PE RVA candidates ---"
+              if [ "$FILE_NAME" = ArmCpuDxe ]; then
+                TARGETS=(0x1440 0x2340 0x2430 0x2434 0x2440 0x2444 0x3440 0x134C 0x34C 0x234C)
+              else
+                TARGETS=(0x67AC 0x87AC 0x77AC 0x97AC 0x8C18 0x7C18 0x9C18 0x1034 0x1134 0x2034)
+              fi
+              for addr in "${TARGETS[@]}"; do
+                echo "ELF $FILE_NAME offset $addr:"
+                aarch64-linux-gnu-addr2line --functions --inlines --demangle -e "$ITEM.debug" "$addr" || true
+              done
+            done
+          } | tee "$DEST/REPORT.txt"
+
+          aarch64-linux-gnu-nm -an "$CPU.debug" > "$DEST/ArmCpuDxe-nm.txt"
+          aarch64-linux-gnu-nm -an "$CORE.debug" > "$DEST/DxeCore-nm.txt"
+          aarch64-linux-gnu-objdump -d -l --start-address=0x1000 --stop-address=0x4500 "$CPU.dll" > "$DEST/ArmCpuDxe-disasm.txt"
+          aarch64-linux-gnu-objdump -d -l --start-address=0x5000 --stop-address=0xb000 "$CORE.dll" > "$DEST/DxeCore-disasm.txt"
+          (cd "$DEST" && sha256sum *.debug *.dll > SHA256SUMS)
+          echo "=== nearby ArmCpuDxe ELF symbols ==="
+          grep -iE 'ArmReplaceLive|ReplaceTableEntry|ArmSetMemory|CpuSetMemory|MemoryAttributes|ArmMmu|EnableMmu|DisableMmu' "$DEST/ArmCpuDxe-nm.txt" | head -n 35 || true
+          echo "=== layout report generated (no device boot) ==="
+
+      - name: Upload offline crash symbols ONLY
+        uses: actions/upload-artifact@v4
+        with:
+          name: nabu-armcpu-exception-symbols
+          path: out/offline-symbols/
+          if-no-files-found: error
+          retention-days: 14
