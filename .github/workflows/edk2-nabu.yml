@@ -1,0 +1,94 @@
+name: Build nabu EDK2 UEFI (experimental)
+
+on:
+  push:
+    branches:
+      - experiment/edk2-nabu-github-actions
+    paths:
+      - .github/workflows/edk2-nabu.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  edk2-nabu:
+    name: Build boot-nabu.img
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      EDK2_MSM_COMMIT: e1952621f419f8db60ed28271264e1b5184c571d
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential uuid-dev iasl nasm git gettext clang llvm \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            python-is-python3 python3-pil python3-git python3-setuptools \
+            device-tree-compiler abootimg bc bison flex libssl-dev \
+            curl cpio gzip xz-utils file
+
+      - name: Checkout pinned upstream firmware and submodules
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init -q edk2-msm
+          git -C edk2-msm remote add origin https://github.com/edk2-porting/edk2-msm.git
+          git -C edk2-msm fetch --depth 1 origin "$EDK2_MSM_COMMIT"
+          git -C edk2-msm checkout --detach -q FETCH_HEAD
+          test "$(git -C edk2-msm rev-parse HEAD)" = "$EDK2_MSM_COMMIT"
+          git -C edk2-msm submodule update --init --recursive --depth 1 --jobs 4
+
+      - name: Build DEBUG image (host-only, not hardware-verified)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cd edk2-msm
+          ./build.sh --device nabu --release DEBUG --outputdir "$GITHUB_WORKSPACE/out"
+
+      - name: Validate boot image and write checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s out/boot-nabu.img
+          python3 - <<'PY'
+          import pathlib, struct
+          path = pathlib.Path("out/boot-nabu.img")
+          data = path.read_bytes()
+          assert len(data) >= 4096, "Boot image too small"
+          assert data[:8] == b"ANDROID!", "Missing Android boot header"
+          kernel_size = struct.unpack_from("<I", data, 8)[0]
+          header_version = struct.unpack_from("<I", data, 40)[0]
+          assert kernel_size > 0, "Kernel/payload is empty"
+          assert header_version == 3, f"Unexpected boot header version {header_version}"
+          print(f"Validated Android boot image: version={header_version}, kernel_size={kernel_size}, bytes={len(data)}")
+          PY
+          (cd out && sha256sum boot-nabu.img > SHA256SUMS)
+          {
+            echo "Experimental EDK2 UEFI image for Xiaomi Pad 5 (nabu)."
+            echo "Upstream: https://github.com/edk2-porting/edk2-msm"
+            echo "Upstream commit: $EDK2_MSM_COMMIT"
+            echo "Build: DEBUG, without forced UART, Android boot header v3."
+            echo "HOST-BUILT ONLY: not validated on a physical device."
+            echo "DO NOT FLASH boot, vendor_boot, dtbo or any other partition."
+            echo "Only consider a temporary fastboot boot after confirming device identity,"
+            echo "unlocked bootloader, and a recovery path. Hardware startup is unproven."
+          } > out/README-FIRST.txt
+          file out/boot-nabu.img
+          cat out/SHA256SUMS
+
+      - name: Publish nabu UEFI download
+        uses: actions/upload-artifact@v4
+        with:
+          name: nabu-edk2-uefi-debug
+          path: |
+            out/boot-nabu.img
+            out/SHA256SUMS
+            out/README-FIRST.txt
+          if-no-files-found: error
+          retention-days: 14
