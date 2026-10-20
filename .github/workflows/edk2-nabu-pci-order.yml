@@ -99,7 +99,7 @@ jobs:
           def move_before(data, driver_guid, target_guid):
               pattern = re.compile(
                   r"(?m)^  FILE DRIVER = " + re.escape(driver_guid)
-                  + r" \\{\\n(?:.*\\n)*?^  \\}\\n\\n")
+                  + r" \{\n(?:.*\n)*?^  \}\n\n")
               hits = list(pattern.finditer(data))
               assert len(hits) == 1, f"expected one driver {driver_guid}, found {len(hits)}"
               match = hits[0]
