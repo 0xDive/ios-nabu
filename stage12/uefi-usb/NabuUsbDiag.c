@@ -478,6 +478,116 @@ ReportDepex (VOID)
   CheckDepex (L"UsbPwrCtrl", &mDrivers[0].FileGuid);
 }
 
+//
+// RAM-only loader check: ReadSection(PE32), LoadImage() then UnloadImage().
+// This NEVER calls StartImage(), DriverBinding.Start() or ConnectController().
+// It DOES allocate RAM and briefly install an EFI image handle; not entirely
+// free of firmware-side effects and intentionally isolated to this test build.
+//
+STATIC
+VOID
+ReportPciLoadOnly (IN EFI_HANDLE ParentImage)
+{
+  EFI_HANDLE                     *Handles;
+  EFI_HANDLE                     TempImage;
+  EFI_STATUS                     Status;
+  EFI_STATUS                     FvStatus;
+  EFI_FIRMWARE_VOLUME2_PROTOCOL  *Fv;
+  VOID                           *PeImage;
+  UINTN                          PeSize;
+  UINTN                          Count;
+  UINTN                          Index;
+  UINT32                         AuthStatus;
+  BOOLEAN                        Found;
+
+  Handles = NULL;
+  Count = 0;
+  Found = FALSE;
+
+  Print (L"\r\n PCI BRIDGE LOAD-ONLY TEST (NO START)\r\n");
+
+  Status = gBS->LocateHandleBuffer (
+                  ByProtocol,
+                  &gEfiFirmwareVolume2ProtocolGuid,
+                  NULL,
+                  &Count,
+                  &Handles);
+  if (EFI_ERROR (Status)) {
+    Print (L" FV locate failed: %r\r\n", Status);
+    return;
+  }
+
+  for (Index = 0; Index < Count && Index < 4; Index++) {
+    Fv = NULL;
+    FvStatus = gBS->HandleProtocol (
+                     Handles[Index],
+                     &gEfiFirmwareVolume2ProtocolGuid,
+                     (VOID **)&Fv);
+    if (EFI_ERROR (FvStatus) || (Fv == NULL)) {
+      continue;
+    }
+
+    PeImage = NULL;
+    PeSize = 0;
+    AuthStatus = 0;
+    FvStatus = Fv->ReadSection (
+                   Fv,
+                   &mDrivers[7].FileGuid,
+                   EFI_SECTION_PE32,
+                   0,
+                   &PeImage,
+                   &PeSize,
+                   &AuthStatus);
+    if (EFI_ERROR (FvStatus)) {
+      if (PeImage != NULL) {
+        FreePool (PeImage);
+      }
+      continue;
+    }
+
+    Found = TRUE;
+    Print (L" FV[%u] PCI PE32=%u B auth=0x%x\r\n",
+           (UINT32)Index, (UINT32)PeSize, AuthStatus);
+
+    if ((PeImage == NULL) || (PeSize < 512) || (PeSize > (1024 * 1024))) {
+      Print (L" Invalid PE image length; skip LoadImage\r\n");
+    } else {
+      TempImage = NULL;
+      Status = gBS->LoadImage (
+                      FALSE,
+                      ParentImage,
+                      NULL,
+                      PeImage,
+                      PeSize,
+                      &TempImage);
+
+      Print (L" LoadImage (RAM only): %r\r\n", Status);
+
+      if (!EFI_ERROR (Status) && (TempImage != NULL)) {
+        // This EFI image was never started; unload immediately.
+        Status = gBS->UnloadImage (TempImage);
+        Print (L" UnloadImage: %r\r\n", Status);
+      }
+
+      Print (L" StartImage: NOT CALLED\r\n");
+    }
+
+    if (PeImage != NULL) {
+      FreePool (PeImage);
+    }
+
+    break;
+  }
+
+  if (!Found) {
+    Print (L" PCI PE32 missing/unreadable in first 4 FVs\r\n");
+  }
+
+  if (Handles != NULL) {
+    FreePool (Handles);
+  }
+}
+
 STATIC
 VOID
 ReportHostPort (VOID)
@@ -539,10 +649,9 @@ UefiMain (
   IN EFI_SYSTEM_TABLE  *SystemTable
   )
 {
-  (VOID)ImageHandle;
   (VOID)SystemTable;
 
-  Print (L"\r\n=== NABU USB DIAG 04: READ ONLY ===\r\n");
+  Print (L"\r\n=== NABU PCI LOAD ONLY 05 ===\r\n");
   Print (L"PCI bridge .depex = METRONOME AND PCD\r\n");
   ProtocolCount (L"METRONOME (REQUIRED)", &gEfiMetronomeArchProtocolGuid);
   ProtocolCount (L"PCD (REQUIRED)", &gEfiPcdProtocolGuid);
@@ -561,10 +670,11 @@ UefiMain (
   ReportLoadedDrivers ();
   ReportPciFirmwareFile ();
   ReportDepex ();
+  ReportPciLoadOnly (ImageHandle);
   ReportHostPort ();
 
   Print (L"=== PHOTO THIS SCREEN ===\r\n");
   Print (L"'-' = no FV-path match; NOT definitive.\r\n");
-  Print (L"No writes to disk, NVRAM or controllers.\r\n\r\n");
+  Print (L"No StartImage / PCI or PMIC register writes.\r\n\r\n");
   return EFI_SUCCESS;
 }

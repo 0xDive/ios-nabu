@@ -3,7 +3,7 @@ name: Build nabu EDK2 USB diagnostics (experimental)
 on:
   push:
     branches:
-      - experiment/edk2-nabu-usb-diagnostics
+      - experiment/nabu-pci-load-probe
     paths:
       - stage12/uefi-usb/**
       - .github/workflows/edk2-nabu-usb-diagnostics.yml
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: nabu-edk2-usb-diagnostics-${{ github.ref }}
+  group: nabu-pci-load-probe-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -123,11 +123,14 @@ jobs:
           USB2 HC, legacy USB HC, USB IO and USBFN protocol counts, as well as
           firmware-loaded driver images and driver binding registrations.
           A loaded image or binding is NOT evidence that the controller started.
-          Diagnostic 04 also evaluates firmware-volume DXE dependency expressions
-          for the PCI bridge and USB chain without dispatching drivers.
+          Diagnostic 05 attempts RAM-only LoadImage() of the PCI host bridge PE32
+          and then UnloadImage(), strictly without calling StartImage(),
+          ConnectController() or DriverBinding.Start(). The test allocates RAM
+          and temporarily installs an EFI image handle. Hardware is not initialized.
           DO NOT FLASH any partition. Only test with temporary fastboot boot.
           The application enumerates protocol handles and reads host port status.
           It does not write to UFS, partitions, UEFI variables or hardware registers.
+          It does load/unload the candidate PCI image into/from RAM without executing it.
           If no diagnostic is shown, firmware FV Shell startup path may differ.
           EOF
           (cd out && sha256sum boot-nabu.img > SHA256SUMS)
@@ -136,7 +139,7 @@ jobs:
       - name: Upload experimental image
         uses: actions/upload-artifact@v4
         with:
-          name: nabu-edk2-usb-diag-04
+          name: nabu-edk2-pci-load-only-05
           path: |
             out/boot-nabu.img
             out/SHA256SUMS

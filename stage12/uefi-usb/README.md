@@ -41,3 +41,12 @@ No hardware probing of MMIO/PCI registers, no controller reset, no writes to dis
 The module reads actual DXE DEPEX sections for PciHostBridge, XhciPciEmulation, UsbInit, UsbConfig and UsbPwrCtrl. It evaluates standard postfix PUSH/AND/OR/NOT expressions using installed protocol GUIDs at EFI Shell entry, showing TRUE/FALSE and number/first GUID of unsatisfied pushes. SOR and BEFORE/AFTER dispatch ordering are not interpreted as ordinary boolean results. Missing DEPEX sections are displayed as unavailable and are **not proof of a broken driver**. Even a TRUE expression does not prove dispatch succeeded; a FALSE expression only describes the protocol state when the diagnostic ran. No attempts are made to start drivers or reinitialize hardware.
 
 Artifact: `nabu-edk2-usb-diag-04`. Use `fastboot boot` only. Keep the old successful images as fallbacks.
+
+
+## DIAG 05: controlled PE image loader probe (not driver execution)
+
+Because `pci-first` caused a synchronous ARM64 exception and `usb-stack-first` did not enable PCI/USB, neither ordering variant is used here. DIAG 05 is based on the last physically validated baseline DIAG 04 with **unmodified DXE ordering**. It reads the stock Qualcomm `PciHostBridge` PE32 section from the existing read-only FV, attempts `EFI_BOOT_SERVICES.LoadImage(FALSE, ParentImage, NULL, RawPE32, Size)`, prints EFI_STATUS, then unloads a successfully loaded image immediately. It **never** calls `StartImage`, `DriverBinding.Start`, `ConnectController`, or MMIO/SPMI writes.
+
+**Limit:** `LoadImage` is not purely read-only: it allocates RAM and briefly installs an EFI image handle and may invoke firmware security checks. It is much less intrusive than executing the PCI driver, but a firmware hang is still possible. A success only proves the memory-buffer PE/COFF load path, not that the DXE dispatcher executed the driver, that the driver's entry succeeded, or that xHCI can work. A failure status points toward loader/security/image/alloc issues. Test with `fastboot boot` only; **do not flash any partitions**. Keep known-working base image and recovery path.
+
+Artifact: `nabu-edk2-pci-load-only-05`.
