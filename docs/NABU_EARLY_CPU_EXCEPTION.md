@@ -49,3 +49,14 @@ The extracted `ArmCpuDxe.debug` and `DxeCore.debug` were independently checked w
 **Working hypothesis:** when DxeCore loads/protects a PE/COFF image, `ProtectUefiImage -> SetUefiImageMemoryAttributes -> CpuSetMemoryAttributes -> UpdateRegionMappingRecursive` updates AArch64 translation-table mappings; the page table/memory attribute path can become unstable in certain memory or image placement configurations. The observed failure predates execution of the custom Shell application and PCI LoadImage probe, so it should not be attributed to USB, keyboard or the PCI binary alone.
 
 **Next action should be offline analysis of image memory protection PCD policy, memory map and actual runtime images; do not change permissions on the tablet or test a new image without a rationale and rollback.** The host job does not upload a firmware boot image.
+
+## Firmware memory-protection policy found in pinned EDK2
+
+The pinned `MdeModulePkg/MdeModulePkg.dec` declares:
+
+- `gEfiMdeModulePkgTokenSpaceGuid.PcdImageProtectionPolicy|0x00000002`: automatically protect aligned firmware-volume PE/COFF image code/data (read-only code, non-executable data).
+- `gEfiMdeModulePkgTokenSpaceGuid.PcdDxeNxMemoryProtectionPolicy|0x0000000`: no additional generic DXE NX memory type protection by default.
+
+Our Qualcomm `QcomCommonDsc.inc` does **not** explicitly override these two policy values. In `DxeCore/Misc/MemoryProtection.c`, `ProtectUefiImage()` calls `SetUefiImageMemoryAttributes()`, which invokes the CPU Architecture Protocol `SetMemoryAttributes`, matching the symbolized call chain. This makes the **image memory protection policy** a concrete A/B-debug hypothesis. It is **not yet proven** that changing it fixes the exception or improves USB.
+
+A future temporary debug-only experiment could disable *only* `PcdImageProtectionPolicy` while holding all hardware driver order and physical memory map constant. **Important: this removes image memory permissions and weakens UEFI isolation/security. Do not flash this configuration or use it as a final release. Do not attempt new hardware test until the user confirms the earlier Android recovery.** No such modified boot image is published in this CI-only branch.
