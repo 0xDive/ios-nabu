@@ -50,3 +50,19 @@ Because `pci-first` caused a synchronous ARM64 exception and `usb-stack-first` d
 **Limit:** `LoadImage` is not purely read-only: it allocates RAM and briefly installs an EFI image handle and may invoke firmware security checks. It is much less intrusive than executing the PCI driver, but a firmware hang is still possible. A success only proves the memory-buffer PE/COFF load path, not that the DXE dispatcher executed the driver, that the driver's entry succeeded, or that xHCI can work. A failure status points toward loader/security/image/alloc issues. Test with `fastboot boot` only; **do not flash any partitions**. Keep known-working base image and recovery path.
 
 Artifact: `nabu-edk2-pci-load-only-05`.
+
+
+## Diagnostic 07: USB_CONFIG protocol and host-binding prerequisites
+
+Physical DIAG 06 successfully entered Shell and printed `LoadImage (RAM only): Success`, `UnloadImage: Success` for the PCI host bridge, but `PCI_ROOT_BRIDGE_IO`, `PCI_IO`, `USB2_HC` and `USB_IO` remained zero. Image-protection policy disabled correlates with avoiding a prior pre-Shell AArch64 MMU exception, but is not a permanent fix.
+
+On Qualcomm ARM SoCs, xHCI is connected to a **platform DWC3 controller**, not necessarily a conventional PCI root bridge. Source reference [Qualcomm XhciPciEmulation.c (older Snapdragon generation)](https://github.com/David112x/android-firmware-qti-sdm660/blob/b5e5bb9ed6c92442fd502b3e726d7c8024dc0763/boot_images/QcomPkg/Drivers/XhciPciEmulationDxe/XhciPciEmulation.c) shows `XhcPciEmulationDriverBindingSupported` looks for `gQcomUsbConfigProtocolGuid` and host-mode `USB_HOST_MODE_XHCI`, while `Start` configures the core and publishes the **emulated** `EFI_PCI_IO`. Thus a missing normal `PCI_ROOT_BRIDGE_IO` is not by itself proof why the USB keyboard fails.
+
+The GUIDs were separately verified inside the **exact pinned SM8150 vendor EFI binaries** (XhciPciEmulation, UsbConfigDxe, UsbInitDxe):
+
+- `QCOM_USB_CONFIG`: `E722B03F-B250-42CE-8EBD-5BD51812D037`
+- `EFI_USB_INIT`: `2DA15AC7-4909-4C4C-B8C3-A742195EA46E`
+
+DIAG 07 reports whether these handles exist, counts their existing `OpenProtocolInformation()` associations, whether each USB_CONFIG controller already has `PCI_IO` and `EFI_DEVICE_PATH`, and retains the existing USB2 HC / USB IO inventories. It **does not call the private vendor-protocol function pointers** (ABI may have changed since older sources), does not reset hardware, does not change USB modes or PMIC/VBUS power. It removes DIAG 06's optional PCI LoadImage/UnloadImage probe. As in the tested DIAG 06, `PcdImageProtectionPolicy=0` is still necessary for this experimental build to isolate the early MMU issue; this **weakens security and must be reverted after diagnosis**. Not for installation. Boot temporarily with `fastboot boot` only.
+
+Artifact: `nabu-edk2-usb-config-diag-07`.

@@ -479,113 +479,130 @@ ReportDepex (VOID)
 }
 
 //
-// RAM-only loader check: ReadSection(PE32), LoadImage() then UnloadImage().
-// This NEVER calls StartImage(), DriverBinding.Start() or ConnectController().
-// It DOES allocate RAM and briefly install an EFI image handle; not entirely
-// free of firmware-side effects and intentionally isolated to this test build.
+// Verified SM8150 pinned binary GUIDs (also present in older Qualcomm headers):
+// USB_CONFIG: E722B03F-B250-42CE-8EBD-5BD51812D037
+// USB_INIT:   2DA15AC7-4909-4C4C-B8C3-A742195EA46E
 //
+// USB config is required by XhciPciEmulation; unlike a PCI root bridge,
+// it is the interface to individual DWC3 USB cores on this platform.
+// This code only queries existence and existing handle associations.
+// In particular: DO NOT dereference proprietary ABI or invoke ConfigUsb.
+//
+STATIC EFI_GUID mQcomUsbConfigGuid = {
+  0xe722b03f, 0xb250, 0x42ce,
+  {0x8e,0xbd,0x5b,0xd5,0x18,0x12,0xd0,0x37}
+};
+
+STATIC EFI_GUID mQcomUsbInitGuid = {
+  0x2da15ac7, 0x4909, 0x4c4c,
+  {0xb8,0xc3,0xa7,0x42,0x19,0x5e,0xa4,0x6e}
+};
+
 STATIC
 VOID
-ReportPciLoadOnly (IN EFI_HANDLE ParentImage)
+ReportQcomUsbConfigHandles (VOID)
 {
-  EFI_HANDLE                     *Handles;
-  EFI_HANDLE                     TempImage;
-  EFI_STATUS                     Status;
-  EFI_STATUS                     FvStatus;
-  EFI_FIRMWARE_VOLUME2_PROTOCOL  *Fv;
-  VOID                           *PeImage;
-  UINTN                          PeSize;
-  UINTN                          Count;
-  UINTN                          Index;
-  UINT32                         AuthStatus;
-  BOOLEAN                        Found;
+  EFI_HANDLE                            *Handles;
+  EFI_STATUS                            Status;
+  UINTN                                 HandleCount;
+  UINTN                                 Index;
 
   Handles = NULL;
-  Count = 0;
-  Found = FALSE;
-
-  Print (L"\r\n PCI BRIDGE LOAD-ONLY TEST (NO START)\r\n");
-
+  HandleCount = 0;
   Status = gBS->LocateHandleBuffer (
                   ByProtocol,
-                  &gEfiFirmwareVolume2ProtocolGuid,
+                  &mQcomUsbConfigGuid,
                   NULL,
-                  &Count,
+                  &HandleCount,
                   &Handles);
+
+  Print (L"\r\n=== QCOM USB CONFIG HOST PREREQUISITES ===\r\n");
+  Print (L" QCOM_USB_CONFIG: %u (%r)\r\n",
+         (UINT32)(EFI_ERROR (Status) ? 0 : HandleCount), Status);
+  Print (L" QCOM_USB_INIT  : ");
+  {
+    EFI_HANDLE *InitHandles;
+    UINTN InitCount;
+    EFI_STATUS InitStatus;
+
+    InitHandles = NULL;
+    InitCount = 0;
+    InitStatus = gBS->LocateHandleBuffer (
+                        ByProtocol, &mQcomUsbInitGuid,
+                        NULL, &InitCount, &InitHandles);
+    Print (L"%u (%r)\r\n",
+           (UINT32)(EFI_ERROR (InitStatus) ? 0 : InitCount), InitStatus);
+    if (InitHandles != NULL) {
+      FreePool (InitHandles);
+    }
+  }
+
   if (EFI_ERROR (Status)) {
-    Print (L" FV locate failed: %r\r\n", Status);
+    Print (L" No USB_CONFIG handles for xHCI binding.\r\n");
     return;
   }
 
-  for (Index = 0; Index < Count && Index < 4; Index++) {
-    Fv = NULL;
-    FvStatus = gBS->HandleProtocol (
-                     Handles[Index],
-                     &gEfiFirmwareVolume2ProtocolGuid,
-                     (VOID **)&Fv);
-    if (EFI_ERROR (FvStatus) || (Fv == NULL)) {
-      continue;
-    }
+  for (Index = 0; Index < HandleCount && Index < 6; Index++) {
+    EFI_OPEN_PROTOCOL_INFORMATION_ENTRY  *Entries;
+    UINTN                                EntryCount;
+    UINTN                                EntryIndex;
+    UINTN                                Drivers;
+    UINTN                                Children;
+    VOID                                 *Instance;
+    EFI_STATUS                           PciStatus;
+    EFI_STATUS                           DpStatus;
 
-    PeImage = NULL;
-    PeSize = 0;
-    AuthStatus = 0;
-    FvStatus = Fv->ReadSection (
-                   Fv,
-                   &mDrivers[7].FileGuid,
-                   EFI_SECTION_PE32,
-                   0,
-                   &PeImage,
-                   &PeSize,
-                   &AuthStatus);
-    if (EFI_ERROR (FvStatus)) {
-      if (PeImage != NULL) {
-        FreePool (PeImage);
+    Entries = NULL;
+    EntryCount = 0;
+    Drivers = 0;
+    Children = 0;
+    Instance = NULL;
+
+    Status = gBS->OpenProtocolInformation (
+                    Handles[Index],
+                    &mQcomUsbConfigGuid,
+                    &Entries,
+                    &EntryCount);
+    if (!EFI_ERROR (Status)) {
+      for (EntryIndex = 0; EntryIndex < EntryCount; EntryIndex++) {
+        if ((Entries[EntryIndex].Attributes & EFI_OPEN_PROTOCOL_BY_DRIVER) != 0) {
+          Drivers++;
+        }
+        if ((Entries[EntryIndex].Attributes & EFI_OPEN_PROTOCOL_BY_CHILD_CONTROLLER) != 0) {
+          Children++;
+        }
       }
-      continue;
     }
 
-    Found = TRUE;
-    Print (L" FV[%u] PCI PE32=%u B auth=0x%x\r\n",
-           (UINT32)Index, (UINT32)PeSize, AuthStatus);
+    PciStatus = gBS->HandleProtocol (
+                       Handles[Index], &gEfiPciIoProtocolGuid,
+                       &Instance);
+    Instance = NULL;
+    DpStatus = gBS->HandleProtocol (
+                      Handles[Index], &gEfiDevicePathProtocolGuid,
+                      &Instance);
 
-    if ((PeImage == NULL) || (PeSize < 512) || (PeSize > (1024 * 1024))) {
-      Print (L" Invalid PE image length; skip LoadImage\r\n");
-    } else {
-      TempImage = NULL;
-      Status = gBS->LoadImage (
-                      FALSE,
-                      ParentImage,
-                      NULL,
-                      PeImage,
-                      PeSize,
-                      &TempImage);
+    Print (L" CFG[%u] opened=%u drv=%u child=%u\r\n",
+           (UINT32)Index, (UINT32)EntryCount,
+           (UINT32)Drivers, (UINT32)Children);
+    Print (L"   PCI_IO=%u devpath=%u info=%r\r\n",
+           (UINT32)!EFI_ERROR (PciStatus),
+           (UINT32)!EFI_ERROR (DpStatus), Status);
 
-      Print (L" LoadImage (RAM only): %r\r\n", Status);
-
-      if (!EFI_ERROR (Status) && (TempImage != NULL)) {
-        // This EFI image was never started; unload immediately.
-        Status = gBS->UnloadImage (TempImage);
-        Print (L" UnloadImage: %r\r\n", Status);
-      }
-
-      Print (L" StartImage: NOT CALLED\r\n");
+    if (Entries != NULL) {
+      FreePool (Entries);
     }
-
-    if (PeImage != NULL) {
-      FreePool (PeImage);
-    }
-
-    break;
   }
 
-  if (!Found) {
-    Print (L" PCI PE32 missing/unreadable in first 4 FVs\r\n");
+  if (HandleCount > 6) {
+    Print (L" +%u additional config handles\r\n",
+           (UINT32)(HandleCount-6));
   }
 
   if (Handles != NULL) {
     FreePool (Handles);
   }
+  Print (L" No USB mode switching or driver starts.\r\n");
 }
 
 STATIC
@@ -650,8 +667,9 @@ UefiMain (
   )
 {
   (VOID)SystemTable;
+  (VOID)ImageHandle;
 
-  Print (L"\r\n=== NABU PCI LOAD ONLY 05 ===\r\n");
+  Print (L"\r\n=== NABU USB CONFIG DIAG 07 ===\r\n");
   Print (L"PCI bridge .depex = METRONOME AND PCD\r\n");
   ProtocolCount (L"METRONOME (REQUIRED)", &gEfiMetronomeArchProtocolGuid);
   ProtocolCount (L"PCD (REQUIRED)", &gEfiPcdProtocolGuid);
@@ -667,10 +685,11 @@ UefiMain (
   ProtocolCount (L"TEXT_INPUT", &gEfiSimpleTextInProtocolGuid);
   ProtocolCount (L"TEXT_INPUT_EX", &gEfiSimpleTextInputExProtocolGuid);
 
+  ReportQcomUsbConfigHandles ();
   ReportLoadedDrivers ();
   ReportPciFirmwareFile ();
   ReportDepex ();
-  ReportPciLoadOnly (ImageHandle);
+  // Do NOT call ReportPciLoadOnly or any USB ConfigUsb/StartImage method.
   ReportHostPort ();
 
   Print (L"=== PHOTO THIS SCREEN ===\r\n");
