@@ -29,3 +29,23 @@
 5. Do not re-run `pci-first` or `PCI LOAD ONLY 05` on hardware. Keep known working `USB DIAG 04` as the baseline. No partition flashing.
 
 This file records observations; it does not claim a fix or successful USB enumeration.
+
+## Offline symbolization result (GitHub Actions 39472373483)
+
+GitHub Actions completed the exact pinned host build and published artifact `nabu-armcpu-exception-symbols`:
+https://github.com/0xDive/ios-nabu/actions/runs/39472373483
+
+The extracted `ArmCpuDxe.debug` and `DxeCore.debug` were independently checked with `aarch64-linux-gnu-nm`, `addr2line`, `readelf` and `objdump`:
+
+| Observed/expected PE image offset | Mapped function in exact ELF build | Evidence |
+| --- | --- | --- |
+| ArmCpuDxe `+0x2440` | `UpdateRegionMappingRecursive()` | `ArmPkg/Library/ArmMmuLib/AArch64/ArmMmuLibCore.c` around line 230 |
+| ArmCpuDxe `+0x2434` | `UpdateRegionMappingRecursive()` | Same function; branch immediately before `+0x2440` |
+| DxeCore `+0x87AC` | `SetUefiImageMemoryAttributes()` | `MdeModulePkg/Core/Dxe/Misc/MemoryProtection.c` around line 229 |
+| DxeCore `+0x8C18` | `ProtectUefiImage()` | Same source file |
+
+`ArmCpuDxe` ELF `.text` is `0x1000..0x7218`. The instruction at `0x2440` is **valid AArch64** `0x92800008: mov x8,#-1`, so the source machine code is not an inherently undefined opcode. The `ArmReplaceLiveTranslationEntry()` assembly symbol is at ELF `0x4B14` (not `0x2440`); the warning about temporarily disabling MMU may have been printed earlier but is not proof that this helper is the faulting instruction. Confirm actual PE/ELF load-relative offsets on device before drawing a definitive CPU-corruption conclusion.
+
+**Working hypothesis:** when DxeCore loads/protects a PE/COFF image, `ProtectUefiImage -> SetUefiImageMemoryAttributes -> CpuSetMemoryAttributes -> UpdateRegionMappingRecursive` updates AArch64 translation-table mappings; the page table/memory attribute path can become unstable in certain memory or image placement configurations. The observed failure predates execution of the custom Shell application and PCI LoadImage probe, so it should not be attributed to USB, keyboard or the PCI binary alone.
+
+**Next action should be offline analysis of image memory protection PCD policy, memory map and actual runtime images; do not change permissions on the tablet or test a new image without a rationale and rollback.** The host job does not upload a firmware boot image.
