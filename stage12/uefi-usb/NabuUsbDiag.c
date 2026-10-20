@@ -20,6 +20,7 @@
 #include <Protocol/PciHostBridgeResourceAllocation.h>
 #include <Pi/PiFirmwareFile.h>
 #include <Pi/PiFirmwareVolume.h>
+#include <Pi/PiDependency.h>
 #include <Protocol/FirmwareVolume2.h>
 #include <Protocol/Metronome.h>
 #include <Protocol/PiPcd.h>
@@ -254,6 +255,229 @@ ReportPciFirmwareFile (VOID)
   }
 }
 
+//
+// Inspect DEPEX from installed FV files without dispatching any drivers.
+//
+// EFI DEP expression is postfix (PUSH GUID, AND, OR, NOT, TRUE/FALSE, END).
+// These checks are snapshots of installed UEFI protocols at Shell entry.
+//
+STATIC
+VOID
+CheckDepex (
+  IN CONST CHAR16  *DriverName,
+  IN EFI_GUID      *FileGuid
+  )
+{
+  EFI_STATUS                     Status;
+  EFI_HANDLE                     *Handles;
+  EFI_FIRMWARE_VOLUME2_PROTOCOL  *Fv;
+  UINTN                          Count;
+  UINTN                          Index;
+  VOID                           *Buffer;
+  UINTN                          BufferSize;
+  UINT32                         AuthStatus;
+  BOOLEAN                        Stack[32];
+  UINTN                          Sp;
+  UINTN                          Offset;
+  BOOLEAN                        Valid;
+  BOOLEAN                        Complete;
+  BOOLEAN                        Value;
+  BOOLEAN                        Special;
+  EFI_GUID                       ProtocolGuid;
+  VOID                           *Interface;
+  UINTN                          MissingPushCount;
+  UINT32                         FirstMissing;
+
+  Handles = NULL;
+  Count = 0;
+  Status = gBS->LocateHandleBuffer (
+                  ByProtocol,
+                  &gEfiFirmwareVolume2ProtocolGuid,
+                  NULL,
+                  &Count,
+                  &Handles);
+  if (EFI_ERROR (Status)) {
+    Print (L" %-14s FV2 absent: %r\r\n", DriverName, Status);
+    return;
+  }
+
+  Buffer = NULL;
+  BufferSize = 0;
+  Status = EFI_NOT_FOUND;
+
+  for (Index = 0; Index < Count && Index < 4; Index++) {
+    Fv = NULL;
+    if (EFI_ERROR (gBS->HandleProtocol (
+                          Handles[Index],
+                          &gEfiFirmwareVolume2ProtocolGuid,
+                          (VOID **)&Fv)) || Fv == NULL) {
+      continue;
+    }
+
+    Buffer = NULL;
+    BufferSize = 0;
+    AuthStatus = 0;
+    Status = Fv->ReadSection (
+                   Fv,
+                   FileGuid,
+                   EFI_SECTION_DXE_DEPEX,
+                   0,
+                   &Buffer,
+                   &BufferSize,
+                   &AuthStatus);
+    if (!EFI_ERROR (Status)) {
+      break;
+    }
+
+    if (Buffer != NULL) {
+      FreePool (Buffer);
+      Buffer = NULL;
+    }
+
+    if (Status != EFI_NOT_FOUND) {
+      break;
+    }
+  }
+
+  if (Handles != NULL) {
+    FreePool (Handles);
+  }
+
+  if (EFI_ERROR (Status)) {
+    Print (L" %-14s DXE_DEPEX %r\r\n", DriverName, Status);
+    return;
+  }
+
+  if ((Buffer == NULL) || (BufferSize == 0) || (BufferSize > 512)) {
+    Print (L" %-14s invalid DEP len=%u\r\n", DriverName, (UINT32)BufferSize);
+    if (Buffer != NULL) {
+      FreePool (Buffer);
+    }
+    return;
+  }
+
+  Sp = 0;
+  Offset = 0;
+  Valid = TRUE;
+  Complete = FALSE;
+  Special = FALSE;
+  Value = FALSE;
+  MissingPushCount = 0;
+  FirstMissing = 0;
+
+  while ((Offset < BufferSize) && Valid && !Complete) {
+    UINT8 Op;
+
+    Op = ((UINT8 *)Buffer)[Offset++];
+    switch (Op) {
+      case EFI_DEP_PUSH:
+        if (((BufferSize - Offset) < sizeof (EFI_GUID)) ||
+            (Sp >= sizeof (Stack)/sizeof (Stack[0]))) {
+          Valid = FALSE;
+          break;
+        }
+
+        CopyMem (&ProtocolGuid, ((UINT8 *)Buffer) + Offset, sizeof (EFI_GUID));
+        Offset += sizeof (EFI_GUID);
+        Interface = NULL;
+        Value = !EFI_ERROR (
+                   gBS->LocateProtocol (&ProtocolGuid, NULL, &Interface));
+
+        if (!Value) {
+          MissingPushCount++;
+          if (FirstMissing == 0) {
+            FirstMissing = ProtocolGuid.Data1;
+          }
+        }
+
+        Stack[Sp++] = Value;
+        break;
+
+      case EFI_DEP_TRUE:
+      case EFI_DEP_FALSE:
+        if (Sp >= sizeof (Stack)/sizeof (Stack[0])) {
+          Valid = FALSE;
+        } else {
+          Stack[Sp++] = (Op == EFI_DEP_TRUE);
+        }
+        break;
+
+      case EFI_DEP_NOT:
+        if (Sp < 1) {
+          Valid = FALSE;
+        } else {
+          Stack[Sp-1] = !Stack[Sp-1];
+        }
+        break;
+
+      case EFI_DEP_AND:
+      case EFI_DEP_OR:
+        if (Sp < 2) {
+          Valid = FALSE;
+        } else {
+          BOOLEAN Right;
+          Right = Stack[--Sp];
+          Stack[Sp-1] = (Op == EFI_DEP_AND)
+                          ? (Stack[Sp-1] && Right)
+                          : (Stack[Sp-1] || Right);
+        }
+        break;
+
+      case EFI_DEP_SOR:
+        // Schedule-on-request additionally depends on DXE dispatch policy.
+        Special = TRUE;
+        break;
+
+      case EFI_DEP_BEFORE:
+      case EFI_DEP_AFTER:
+        // Ordering expressions cannot be truth-evaluated like PUSH/AND/OR.
+        Special = TRUE;
+        Complete = TRUE;
+        break;
+
+      case EFI_DEP_END:
+        Complete = TRUE;
+        break;
+
+      default:
+        Valid = FALSE;
+        break;
+    }
+  }
+
+  if (!Valid || !Complete || (Sp != 1) || (Offset != BufferSize)) {
+    if (!Special) {
+      Print (L" %-14s DEP malformed (%u B)\r\n",
+             DriverName, (UINT32)BufferSize);
+    } else {
+      Print (L" %-14s ordering/SOR DEP (%u B)\r\n",
+             DriverName, (UINT32)BufferSize);
+    }
+  } else {
+    Print (L" %-14s dep=%s pushmiss=%u\r\n",
+           DriverName,
+           Special ? L"SOR" : (Stack[0] ? L"TRUE" : L"FALSE"),
+           (UINT32)MissingPushCount);
+    if (MissingPushCount != 0) {
+      Print (L"   first missing GUID.Data1=%08x\r\n", FirstMissing);
+    }
+  }
+
+  FreePool (Buffer);
+}
+
+STATIC
+VOID
+ReportDepex (VOID)
+{
+  Print (L"\r\n DXE dispatch dependencies in FV:\r\n");
+  CheckDepex (L"PciHostBridge", &mDrivers[7].FileGuid);
+  CheckDepex (L"XhciPciEmu", &mDrivers[3].FileGuid);
+  CheckDepex (L"UsbInit", &mDrivers[1].FileGuid);
+  CheckDepex (L"UsbConfig", &mDrivers[2].FileGuid);
+  CheckDepex (L"UsbPwrCtrl", &mDrivers[0].FileGuid);
+}
+
 STATIC
 VOID
 ReportHostPort (VOID)
@@ -318,7 +542,7 @@ UefiMain (
   (VOID)ImageHandle;
   (VOID)SystemTable;
 
-  Print (L"\r\n=== NABU USB DIAG 03: READ ONLY ===\r\n");
+  Print (L"\r\n=== NABU USB DIAG 04: READ ONLY ===\r\n");
   Print (L"PCI bridge .depex = METRONOME AND PCD\r\n");
   ProtocolCount (L"METRONOME (REQUIRED)", &gEfiMetronomeArchProtocolGuid);
   ProtocolCount (L"PCD (REQUIRED)", &gEfiPcdProtocolGuid);
@@ -336,6 +560,7 @@ UefiMain (
 
   ReportLoadedDrivers ();
   ReportPciFirmwareFile ();
+  ReportDepex ();
   ReportHostPort ();
 
   Print (L"=== PHOTO THIS SCREEN ===\r\n");

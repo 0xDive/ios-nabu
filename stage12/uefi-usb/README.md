@@ -34,3 +34,10 @@ USB DIAG 02 on physical nabu with an OTG hub showed zero `EFI_PCI_ROOT_BRIDGE_IO
 The stock `PciHostBridge.depex` file (binary submodule SHA `d097b8a8bf3641e5e0c8b36ef1ac9d7cc1a0bd94`) was decoded as `PUSH EFI_METRONOME_ARCH_PROTOCOL AND PUSH EFI_PCD_PROTOCOL END`. Diagnostic 03 checks both protocol counts, PCI bridge resource protocol and presence of the PCI bridge module in the firmware volume without executing or reinitializing any missing driver. A missing protocol could explain DXE dispatch not starting. A present protocol with no PciHostBridge image match requires more investigation, not unsafe forced reloading.
 
 No hardware probing of MMIO/PCI registers, no controller reset, no writes to disk/NVRAM. Run temporarily with `fastboot boot` only. Extract `nabu-edk2-usb-diag-03` from Actions and photograph the screen.
+
+
+## Diagnostic 04 — read-only firmware DXE dependencies
+
+The module reads actual DXE DEPEX sections for PciHostBridge, XhciPciEmulation, UsbInit, UsbConfig and UsbPwrCtrl. It evaluates standard postfix PUSH/AND/OR/NOT expressions using installed protocol GUIDs at EFI Shell entry, showing TRUE/FALSE and number/first GUID of unsatisfied pushes. SOR and BEFORE/AFTER dispatch ordering are not interpreted as ordinary boolean results. Missing DEPEX sections are displayed as unavailable and are **not proof of a broken driver**. Even a TRUE expression does not prove dispatch succeeded; a FALSE expression only describes the protocol state when the diagnostic ran. No attempts are made to start drivers or reinitialize hardware.
+
+Artifact: `nabu-edk2-usb-diag-04`. Use `fastboot boot` only. Keep the old successful images as fallbacks.
