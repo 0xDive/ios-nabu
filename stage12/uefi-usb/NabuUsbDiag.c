@@ -18,6 +18,8 @@
 #include <Protocol/PciIo.h>
 #include <Protocol/PciRootBridgeIo.h>
 #include <Protocol/PciHostBridgeResourceAllocation.h>
+#include <Pi/PiFirmwareFile.h>
+#include <Pi/PiFirmwareVolume.h>
 #include <Protocol/FirmwareVolume2.h>
 #include <Protocol/Metronome.h>
 #include <Protocol/PiPcd.h>
