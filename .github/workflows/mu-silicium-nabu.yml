@@ -1,29 +1,32 @@
-name: nabu Mu-Silicium UEFI build (experimental)
+name: nabu Mu-Silicium UniXNU FV link (host-only)
 
 on:
   push:
     branches:
-      - experiment/mu-silicium-unixnu-nabu
+      - experiment/mu-nabu-unixnu-fv-link
     paths:
       - .github/workflows/mu-silicium-nabu.yml
       - stage12/mu-silicium/**
+      - stage12/unixnu/**
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: nabu-mu-silicium-${{ github.ref }}
+  group: nabu-mu-unixnu-fv-link-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   nabu-uefi:
-    name: Mu-Silicium nabuPkg DEBUG
+    name: Compile UniXNU and DarwinBoot into nabuPkg FV (offline)
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
       MU_COMMIT: 0eb4514db0744b8136a3897ab1af93b713c2c27b
       BINARY_SUBMODULE: a1501e0c2e642d6ac0d8f52c85af2a67b75a7799
+      UNIXNU_COMMIT: 97de9e715e06d77b8ebe7b80f6e556ee7ab9a7e9
+      DARWIN_COMMIT: 85332b317ee80898fc78939ea64e6ca52d3837a3
       DEBIAN_FRONTEND: noninteractive
       CLANGPDB_AARCH64_PREFIX: aarch64-linux-gnu-
     steps:
@@ -61,7 +64,39 @@ jobs:
           git -C mu-silicium submodule status > mu-submodules.txt
           cat mu-submodules.txt
 
-      - name: Build unmodified nabuPkg DEBUG firmware
+      - name: Validate local FV overlay contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s stage12/mu-silicium/tests -v
+          python3 -m py_compile stage12/mu-silicium/integrate_fv.py
+
+      - name: Fetch pinned UniXNU + DarwinBoot and link components into FV
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init -q unixnu-reference
+          git -C unixnu-reference remote add origin https://github.com/UniXNU/UniXNU.git
+          git -C unixnu-reference fetch --depth 1 origin "$UNIXNU_COMMIT"
+          git -C unixnu-reference checkout -q --detach FETCH_HEAD
+          test "$(git -C unixnu-reference rev-parse HEAD)" = "$UNIXNU_COMMIT"
+          git init -q darwinboot-reference
+          git -C darwinboot-reference remote add origin https://github.com/UniXNU/DarwinBoot.git
+          git -C darwinboot-reference fetch --depth 1 origin "$DARWIN_COMMIT"
+          git -C darwinboot-reference checkout -q --detach FETCH_HEAD
+          test "$(git -C darwinboot-reference rev-parse HEAD)" = "$DARWIN_COMMIT"
+          cp -a unixnu-reference/package/UniXNUPkg mu-silicium/
+          cp -a darwinboot-reference/DarwinBootPkg mu-silicium/
+          mkdir -p out
+          python3 stage12/mu-silicium/integrate_fv.py \
+            --workspace mu-silicium \
+            --report out/uni-fv-link-audit.json
+          grep -q 'UniXNU.efi' mu-silicium/UniXNUPkg/Application/UniXNU/UniXNU.inf || true
+          ! grep -q 'UniXNUDxe/UniXNUDxe.inf' mu-silicium/Platforms/Xiaomi/nabuPkg/nabu.dsc
+          ! grep -q 'UniXNUDxe/UniXNUDxe.inf' mu-silicium/Platforms/Xiaomi/nabuPkg/nabu.fdf
+          printf 'mu=%s\\nunixnu=%s\\ndarwinboot=%s\\n' "$MU_COMMIT" "$UNIXNU_COMMIT" "$DARWIN_COMMIT" > out/source-pins.txt
+
+      - name: Build nabuPkg DEBUG firmware with linked UniXNU components
         shell: bash
         env:
           PYTHONUNBUFFERED: 1
@@ -73,7 +108,7 @@ jobs:
           test -s Build/nabuPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd
           test -s Mu-nabu.img
 
-      - name: Audit image/header/DTB/firmware consistency
+      - name: Audit linked EFI modules and boot container (do NOT publish boot image)
         shell: bash
         run: |
           set -euo pipefail
@@ -83,23 +118,43 @@ jobs:
             --fd mu-silicium/Build/nabuPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd \
             --dtb mu-silicium/Resources/DTBs/nabu.dtb \
             --report out/image-audit.json
-          cp mu-silicium/Mu-nabu.img out/Mu-nabu.img
-          cp mu-silicium/Build/nabuPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd out/SILICIUM_UEFI.fd
-          (cd out && sha256sum Mu-nabu.img SILICIUM_UEFI.fd > SHA256SUMS)
+          # Verify compiled PE/COFF modules, but keep boot/FD inside the CI runner.
+          WORK="mu-silicium/Build/nabuPkg/DEBUG_CLANGPDB"
+          UNI="$(find "$WORK/AARCH64" -type f -path '*/OUTPUT/UniXNU.efi' -print -quit)"
+          DARWIN="$(find "$WORK/AARCH64" -type f -path '*/OUTPUT/DarwinBoot.efi' -print -quit)"
+          test -n "$UNI" && test -s "$UNI"
+          test -n "$DARWIN" && test -s "$DARWIN"
+          file "$UNI" "$DARWIN"
+          python3 - "$UNI" "$DARWIN" <<'PY'
+          from pathlib import Path
+          import sys
+          for file in sys.argv[1:]:
+              data = Path(file).read_bytes()
+              assert data[:2] == b"MZ" and len(data) >= 1024, f"Not an EFI PE/COFF image: {file}"
+              print(f"Verified AArch64 PE/COFF candidate: {file} ({len(data)} bytes)")
+          PY
+          FFS="$WORK/FV/Ffs"
+          test -d "$FFS"
+          find "$FFS" -mindepth 1 -maxdepth 1 -type d -iname '*UniXNU*' -print | grep -q .
+          find "$FFS" -mindepth 1 -maxdepth 1 -type d -iname '*DarwinBoot*' -print | grep -q .
+          cp "$UNI" out/UniXNU.efi
+          cp "$DARWIN" out/DarwinBoot.efi
+          (cd out && sha256sum UniXNU.efi DarwinBoot.efi > SHA256SUMS)
           {
-            echo "Mu-Silicium UEFI for Xiaomi Pad 5 nabu; NOT hardware-tested."
-            echo "Pin: https://github.com/UniXNU/uefi-sheng/commit/$MU_COMMIT"
-            echo "Pinned Binaries submodule SHA: $BINARY_SUBMODULE"
-            echo "Android boot header: v1; compatibility with this tablet unproven."
-            echo "UNSAFE TO FLASH. NEVER use fastboot flash, erase or format."
-            echo "This build does not boot XNU and does not fix USB Host."
-            echo "Keep Android recovery and known-working edk2-msm image."
+            echo "OFFLINE ONLY: compiled UniXNU.efi and DarwinBoot.efi for Mu-Silicium nabuPkg."
+            echo "Known hardware: baseline Mu-Silicium UEFI (without UniXNU) did reach BDS on nabu."
+            echo "UniXNU application was placed in firmware volume but is NOT autostarted."
+            echo "UniXNUDxe BOOT-ORDER REGISTRAR WAS EXCLUDED: no Boot####/BootOrder writes."
+            echo "There is no nabu hardware-adapted XNU, iPadOS image or trusted boot payload."
+            echo "DO NOT FLASH any boot, vendor, userdata or other partitions."
+            echo "Do not boot any image from this offline artifact; only EFI link proof is uploaded."
+            echo "Mu source: $MU_COMMIT, UniXNU: $UNIXNU_COMMIT, DarwinBoot: $DARWIN_COMMIT"
           } > out/README-FIRST.txt
 
-      - name: Publish experimental UEFI files
+      - name: Publish source/EFI link proof (NO boot.img)
         uses: actions/upload-artifact@v4
         with:
-          name: nabu-mu-silicium-debug-unverified
+          name: nabu-mu-unixnu-fv-link-offline
           path: out/
           if-no-files-found: error
           retention-days: 14
