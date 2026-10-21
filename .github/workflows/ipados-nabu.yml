@@ -7,6 +7,10 @@ on:
       - .github/workflows/ipados-nabu.yml
   workflow_dispatch:
 
+concurrency:
+  group: ipados-nabu-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -119,6 +123,17 @@ jobs:
         env:
           MAKEFLAGS: -k
         run: bash build.sh
+      - name: Verify local Nabu hardware fixes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'nabu_surface_bgra_hint_id(void)' dxb/xnu/iokit/Kernel/arm/NabuSurface.cpp
+          grep -q 'nabu_surface_probe_all(void)' dxb/xnu/iokit/Kernel/arm/NabuSurface.cpp
+          grep -q 'qcom,kryo485' dxb/xnu/iokit/KernelConfigTables.cpp
+          grep -q '#define EARLY_WIDTH 1600u' dxb/xnu/osfmk/arm64/nabu_early.c
+          grep -q '2528 \* 6400' dxb/xnu/osfmk/arm64/start.s
+          echo 'Local IOSurface and SM8150 hardware patches applied'
       - name: Collect kernel
         if: always()
         shell: bash
@@ -178,7 +193,7 @@ jobs:
           test -s shim/Image
           test -s shim/nabu-ipad.adt
           python3 port/tools/mkpayload.py kernel/kernel.development.nabu shim/nabu-ipad.adt bundle/payload.bin \
-            --cmdline 'debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam -noprogress rd=ufsroot0 ufsrw=1 rootrw=1 launchd_unsecure_cache=1 nabuusb=1 ufslogsecs=1 nabufb_force_on=1 nabufb_noconsole=1 wdt=-1 wdt_test=no_user_checkin ignition_level=1'
+            --cmdline 'debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam -noprogress rd=ufsroot0 ufsrw=1 rootrw=1 launchd_unsecure_cache=1 nabuusb=1 ufslogsecs=1 nabufb_force_on=1 nabufb_noconsole=1 nabufb_hz=30 nabufb_fallback=1 nabufb_crop=1 wdt=-1 wdt_test=no_user_checkin ignition_level=1'
           cp shim/Image shim/nabu-ipad.adt bundle/
           sha256sum bundle/* > bundle/SHA256SUMS
           printf '%s\n' 'EXPERIMENTAL: Not bootable without original stock nabu DTB, iPad7,3 product ADT, and user-supplied iPadOS root. Do not flash userdata without backups.' > bundle/README.txt
