@@ -1,0 +1,105 @@
+name: nabu Mu-Silicium UEFI build (experimental)
+
+on:
+  push:
+    branches:
+      - experiment/mu-silicium-unixnu-nabu
+    paths:
+      - .github/workflows/mu-silicium-nabu.yml
+      - stage12/mu-silicium/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nabu-mu-silicium-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nabu-uefi:
+    name: Mu-Silicium nabuPkg DEBUG
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      MU_COMMIT: 0eb4514db0744b8136a3897ab1af93b713c2c27b
+      BINARY_SUBMODULE: a1501e0c2e642d6ac0d8f52c85af2a67b75a7799
+      DEBIAN_FRONTEND: noninteractive
+      CLANGPDB_AARCH64_PREFIX: aarch64-linux-gnu-
+    steps:
+      - name: Checkout isolated build harness
+        uses: actions/checkout@v4
+
+      - name: Install toolchain and Python build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            git git-lfs ca-certificates build-essential clang llvm lld \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu nasm uuid-dev \
+            mono-devel iasl device-tree-compiler python3 python3-venv \
+            python3-pip python3-git gettext make file xz-utils gzip zip \
+            cmake ninja-build libssl-dev
+          python3 -m venv "$GITHUB_WORKSPACE/venv"
+          "$GITHUB_WORKSPACE/venv/bin/pip" install --upgrade pip
+
+      - name: Fetch exact Mu-Silicium revision and pinned submodules
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init -q mu-silicium
+          git -C mu-silicium remote add origin https://github.com/UniXNU/uefi-sheng.git
+          git -C mu-silicium fetch --depth 1 origin "$MU_COMMIT"
+          git -C mu-silicium checkout -q --detach FETCH_HEAD
+          test "$(git -C mu-silicium rev-parse HEAD)" = "$MU_COMMIT"
+          git -C mu-silicium submodule update --init --recursive --depth 1 --jobs 4
+          test "$(git -C mu-silicium/Binaries rev-parse HEAD)" = "$BINARY_SUBMODULE"
+          test -s mu-silicium/Resources/DTBs/nabu.dtb
+          test -s mu-silicium/Platforms/Xiaomi/nabuPkg/nabu.dsc
+          test -s mu-silicium/Binaries/nabu/QcomPkg/Drivers/UsbConfigDxe/UsbConfigDxe.patched.efi
+          "$GITHUB_WORKSPACE/venv/bin/pip" install -r mu-silicium/pip-requirements.txt
+          git -C mu-silicium submodule status > mu-submodules.txt
+          cat mu-submodules.txt
+
+      - name: Build unmodified nabuPkg DEBUG firmware
+        shell: bash
+        env:
+          PYTHONUNBUFFERED: 1
+        run: |
+          set -euo pipefail
+          export PATH="$GITHUB_WORKSPACE/venv/bin:$PATH"
+          cd mu-silicium
+          python3 build_uefi.py --device nabu --release DEBUG
+          test -s Build/nabuPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd
+          test -s Mu-nabu.img
+
+      - name: Audit image/header/DTB/firmware consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          python3 stage12/mu-silicium/validate_mu_image.py \
+            --boot mu-silicium/Mu-nabu.img \
+            --fd mu-silicium/Build/nabuPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd \
+            --dtb mu-silicium/Resources/DTBs/nabu.dtb \
+            --report out/image-audit.json
+          cp mu-silicium/Mu-nabu.img out/Mu-nabu.img
+          cp mu-silicium/Build/nabuPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd out/SILICIUM_UEFI.fd
+          (cd out && sha256sum Mu-nabu.img SILICIUM_UEFI.fd > SHA256SUMS)
+          {
+            echo "Mu-Silicium UEFI for Xiaomi Pad 5 nabu; NOT hardware-tested."
+            echo "Pin: https://github.com/UniXNU/uefi-sheng/commit/$MU_COMMIT"
+            echo "Pinned Binaries submodule SHA: $BINARY_SUBMODULE"
+            echo "Android boot header: v1; compatibility with this tablet unproven."
+            echo "UNSAFE TO FLASH. NEVER use fastboot flash, erase or format."
+            echo "This build does not boot XNU and does not fix USB Host."
+            echo "Keep Android recovery and known-working edk2-msm image."
+          } > out/README-FIRST.txt
+
+      - name: Publish experimental UEFI files
+        uses: actions/upload-artifact@v4
+        with:
+          name: nabu-mu-silicium-debug-unverified
+          path: out/
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,39 @@
+# Offline-only target manifest. This is NOT a UniXNU bootable board.toml.
+[target]
+codename = "nabu"
+soc = "SM8150-AC"
+product = "Xiaomi Pad 5"
+safe_to_boot = false
+android_partitions_modified = false
+
+[references]
+unixnu = "https://github.com/UniXNU/UniXNU"
+unixnu_commit = "97de9e715e06d77b8ebe7b80f6e556ee7ab9a7e9"
+darwinboot = "https://github.com/UniXNU/DarwinBoot"
+darwinboot_commit = "85332b317ee80898fc78939ea64e6ca52d3837a3"
+uefi = "https://github.com/UniXNU/uefi-sheng"
+uefi_commit = "0eb4514db0744b8136a3897ab1af93b713c2c27b"
+
+[xnu]
+existing_smoke_generation = 8796
+unixnu_generation = 10063
+abi_compatible = false
+source_commit = "d8b80295118ef25ac3a784134bcf95cd8e88109f"
+native_page_bytes = 4096
+machine = "BCM2837"
+built_for_nabu_hardware = false
+
+[handoff]
+firmware_gop_tested = false
+nabu_darwinboot_integrated = false
+verified_early_ram_map = false
+boot_args_abi_validated_on_hardware = false
+nabu_adt_validated_on_hardware = false
+native_nabu_kernel_available = false
+userdata_layout_verified = false
+real_usb_keyboard_in_uefi = false
+
+[safety]
+permit_fastboot_flash = false
+permit_userdata_write = false
+permit_unreviewed_payload_boot = false
