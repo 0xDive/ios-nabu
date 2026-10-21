@@ -1,0 +1,71 @@
+name: nabu UniXNU and DarwinBoot reference preflight
+
+on:
+  push:
+    branches:
+      - experiment/mu-silicium-unixnu-nabu
+    paths:
+      - .github/workflows/unixnu-nabu-preflight.yml
+      - stage12/unixnu/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nabu-unixnu-preflight-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      UNIXNU_SHA: 97de9e715e06d77b8ebe7b80f6e556ee7ab9a7e9
+      DARWIN_SHA: 85332b317ee80898fc78939ea64e6ca52d3837a3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run local no-flash contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s stage12/unixnu/tests -v
+          python3 -m py_compile stage12/unixnu/check_sources.py
+          python3 -m py_compile stage12/mu-silicium/validate_mu_image.py
+
+      - name: Fetch pinned UniXNU and DarwinBoot sources (no submodules or IPSW)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init -q unixnu-reference
+          git -C unixnu-reference remote add origin https://github.com/UniXNU/UniXNU.git
+          git -C unixnu-reference fetch --depth 1 origin "$UNIXNU_SHA"
+          git -C unixnu-reference checkout -q --detach FETCH_HEAD
+          test "$(git -C unixnu-reference rev-parse HEAD)" = "$UNIXNU_SHA"
+          git init -q darwinboot-reference
+          git -C darwinboot-reference remote add origin https://github.com/UniXNU/DarwinBoot.git
+          git -C darwinboot-reference fetch --depth 1 origin "$DARWIN_SHA"
+          git -C darwinboot-reference checkout -q --detach FETCH_HEAD
+          test "$(git -C darwinboot-reference rev-parse HEAD)" = "$DARWIN_SHA"
+
+      - name: Validate reference source and emit nonbootable plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          python3 stage12/unixnu/check_sources.py \
+            --manifest stage12/unixnu/nabu-reference.toml \
+            --unixnu unixnu-reference \
+            --darwinboot darwinboot-reference \
+            --output out/nabu-unixnu-reference-preflight.json
+          echo "No kernel, firmware, device partition or IPSW is shipped in this job." > out/NO_BOOT_IMAGE.txt
+          echo "Missing hardware adaptations are listed in JSON; safe_to_boot=false." >> out/NO_BOOT_IMAGE.txt
+
+      - name: Publish offline source audit only
+        uses: actions/upload-artifact@v4
+        with:
+          name: nabu-unixnu-darwinboot-preflight
+          path: out/
+          if-no-files-found: error
+          retention-days: 14
