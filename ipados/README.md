@@ -8,6 +8,18 @@ This branch is isolated from the existing UEFI port.
 - Local compatibility patches: ipados/patches/
 - Same-device boot-image packer: ipados/assemble-boot.sh
 
+## Verified CI milestone (2026-10-21)
+
+GitHub Actions run https://github.com/0xDive/ios-nabu/actions/runs/39676913328
+completed successfully on commit 8932274ed615f1d5d9348b78e81aa567325aabd0.
+
+- Shim / ADT: ipados-nabu-shim-parts (artifact 12382142073), success.
+- XNU: ipados-nabu-xnu-kernel (artifact 12382014390), DEVELOPMENT ARM64 NABU, success, kernel.development.nabu about 16 MiB.
+- Packed payload: ipados-nabu-payload-parts (artifact 12382782910), success, payload.bin 16,610,944 bytes.
+- Bundle payload contains NO HFS+ iPadOS root; the original iPad7,3 /product ADT was unavailable and is omitted.
+- Original hardware DTB from a nabu boot.img v2 is still required before a fastboot test image can be assembled.
+- The real tablet has NOT been booted or flashed in this milestone.
+
 ## Build outputs
 
 GitHub Actions compiles the arm64 bare-metal shim, iPad7,3 ADT and patched XNU.
