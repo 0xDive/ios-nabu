@@ -89,6 +89,11 @@ jobs:
           ref: 057b7f53fc7fef46626c81bbe3e1dbbc328c8f34
           path: port
           persist-credentials: false
+      - name: Checkout local compatibility patch
+        uses: actions/checkout@v4
+        with:
+          path: fixes
+          persist-credentials: false
       - name: Fetch pinned XNU build harness and overlay patches
         shell: bash
         run: |
@@ -96,6 +101,7 @@ jobs:
           git -C dxb fetch -q --depth 1 "$DXB_REPO" "$DXB_SHA"
           git -C dxb checkout -q FETCH_HEAD
           cp port/xnu/patches/*.patch port/xnu/patches/*.sh dxb/patches/
+          cp fixes/ipados/patches/*.patch dxb/patches/
           sed -i '' 's/ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"/ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64"/' dxb/build.sh
           grep -q 'VALID_ARCHS="x86_64 arm64e arm64"' dxb/build.sh
       - name: Install build dependencies
