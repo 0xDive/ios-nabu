@@ -1,0 +1,184 @@
+name: Build iPadOS nabu XNU (pinned upstream)
+on:
+  push:
+    branches:
+      - experiment/ipados-nabu-build-20261021
+    paths:
+      - .github/workflows/ipados-nabu.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PORT_REPO: mytiantian001/iPadOS-nabu
+  PORT_SHA: 057b7f53fc7fef46626c81bbe3e1dbbc328c8f34
+  DXB_REPO: https://github.com/blacktop/darwin-xnu-build
+  DXB_SHA: 663906528d1cd5ea8fde7de6f16de73db9511549
+  MACOS_VERSION: '13.5'
+  KERNEL_CONFIG: DEVELOPMENT
+  MACHINE_CONFIG: NABU
+
+jobs:
+  shim:
+    name: Compile shim and iPad device tree
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout pinned port sources
+        uses: actions/checkout@v4
+        with:
+          repository: mytiantian001/iPadOS-nabu
+          ref: 057b7f53fc7fef46626c81bbe3e1dbbc328c8f34
+          path: port
+          persist-credentials: false
+      - name: Install arm64 compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu gawk
+      - name: Validate source tree
+        run: python3 port/tools/validate-repo.py
+      - name: Generate iPad7,3 hardware ADT
+        run: |
+          mkdir -p port/shim/out
+          python3 port/tools/mkadt.py port/shim/out/nabu-ipad.adt --ipad
+          echo 'WARNING: iPad7,3 /product ADT is absent from the public repository.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Compile bare-metal shim (DTB and userland not provided)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd port/shim
+          CC=aarch64-linux-gnu-gcc
+          OBJCOPY=aarch64-linux-gnu-objcopy
+          CFLAGS="-O2 -ffreestanding -nostdlib -fno-pic -mgeneral-regs-only -mstrict-align -fno-stack-protector -Wall -Wextra"
+          mkdir -p out
+          for f in start.S shim.c console.c mmu.c fdt.c loader.c ufs.c; do
+            name=$(echo "$f" | cut -d. -f1)
+            $CC $CFLAGS -c "$f" -o "out/$name.o"
+          done
+          abs=$(aarch64-linux-gnu-readelf -r out/shim.o out/console.o out/mmu.o out/fdt.o out/loader.o out/ufs.o | grep -c ABS64 || true)
+          test "$abs" = 0 || { echo "Unexpected absolute relocations: $abs"; exit 1; }
+          $CC $CFLAGS -static -T shim.ld -Wl,--build-id=none -Wl,--no-warn-rwx-segments -Wl,-N \
+            out/start.o out/shim.o out/console.o out/mmu.o out/fdt.o out/loader.o out/ufs.o -o out/shim.elf
+          $OBJCOPY -O binary out/shim.elf out/Image
+          size=$(aarch64-linux-gnu-nm out/shim.elf | gawk '$3=="_end"{print strtonum("0x"$1)}')
+          test -n "$size"
+          truncate -s "$size" out/Image
+          gcc -O1 -Wall -o out/host_test console.c host_test.c
+          ./out/host_test
+          file out/shim.elf
+          sha256sum out/shim.elf out/Image out/nabu-ipad.adt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ipados-nabu-shim-parts
+          path: |
+            port/shim/out/shim.elf
+            port/shim/out/Image
+            port/shim/out/nabu-ipad.adt
+          if-no-files-found: error
+
+  xnu:
+    name: Build XNU on macOS 14 / Xcode 15
+    runs-on: macos-14
+    timeout-minutes: 120
+    steps:
+      - name: Checkout pinned port sources
+        uses: actions/checkout@v4
+        with:
+          repository: mytiantian001/iPadOS-nabu
+          ref: 057b7f53fc7fef46626c81bbe3e1dbbc328c8f34
+          path: port
+          persist-credentials: false
+      - name: Fetch pinned XNU build harness and overlay patches
+        shell: bash
+        run: |
+          git init -q dxb
+          git -C dxb fetch -q --depth 1 "$DXB_REPO" "$DXB_SHA"
+          git -C dxb checkout -q FETCH_HEAD
+          cp port/xnu/patches/*.patch port/xnu/patches/*.sh dxb/patches/
+          sed -i '' 's/ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"/ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64"/' dxb/build.sh
+          grep -q 'VALID_ARCHS="x86_64 arm64e arm64"' dxb/build.sh
+      - name: Install build dependencies
+        run: |
+          brew install jq gum bash cmake ninja
+          printf '#!/bin/sh\nexit 0\n' | sudo tee /usr/local/bin/xcodes >/dev/null
+          sudo chmod +x /usr/local/bin/xcodes
+          XC=$(ls -d /Applications/Xcode_*.app | sort -V | head -1)
+          echo "DEVELOPER_DIR=$XC/Contents/Developer" >> "$GITHUB_ENV"
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+          xcrun --find iig
+      - name: Build patched XNU
+        working-directory: dxb
+        env:
+          MAKEFLAGS: -k
+        run: bash build.sh
+      - name: Collect kernel
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p out
+          cp -R dxb/fakeroot/System/Library/Kernels/. out/ 2>/dev/null || true
+          (cd out && shasum -a 256 kernel.* > SHA256SUMS) || true
+          ls -lah out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ipados-nabu-xnu-kernel
+          path: out/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Preserve XNU build tree on failure
+        if: failure()
+        shell: bash
+        run: |
+          mkdir -p debug
+          tar czf debug/xnu-buildtree.tgz \
+            --exclude='*.o' --exclude='*.a' --exclude='*.dSYM' \
+            -C dxb build/xnu.obj fakeroot/usr/local/include xnu 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: ipados-nabu-xnu-buildtree
+          path: debug/
+          if-no-files-found: ignore
+          retention-days: 3
+
+  bundle:
+    name: Pack XNU payload (not flashable without device DTB)
+    runs-on: ubuntu-24.04
+    needs: [shim, xnu]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: mytiantian001/iPadOS-nabu
+          ref: 057b7f53fc7fef46626c81bbe3e1dbbc328c8f34
+          path: port
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: ipados-nabu-shim-parts
+          path: shim
+      - uses: actions/download-artifact@v4
+        with:
+          name: ipados-nabu-xnu-kernel
+          path: kernel
+      - name: Package loader payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p bundle
+          test -s kernel/kernel.development.nabu
+          test -s shim/Image
+          test -s shim/nabu-ipad.adt
+          python3 port/tools/mkpayload.py kernel/kernel.development.nabu shim/nabu-ipad.adt bundle/payload.bin \
+            --cmdline 'debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam -noprogress rd=ufsroot0 ufsrw=1 rootrw=1 launchd_unsecure_cache=1 nabuusb=1 ufslogsecs=1 nabufb_force_on=1 nabufb_noconsole=1 wdt=-1 wdt_test=no_user_checkin ignition_level=1'
+          cp shim/Image shim/nabu-ipad.adt bundle/
+          sha256sum bundle/* > bundle/SHA256SUMS
+          printf '%s\n' 'EXPERIMENTAL: Not bootable without original stock nabu DTB, iPad7,3 product ADT, and user-supplied iPadOS root. Do not flash userdata without backups.' > bundle/README.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ipados-nabu-payload-parts
+          path: bundle/
+          if-no-files-found: error
+          retention-days: 7
