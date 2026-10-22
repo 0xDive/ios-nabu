@@ -5,7 +5,7 @@ on:
       - experiment/ipados-nabu-build-20261021
     paths:
       - .github/workflows/ipados-nabu.yml
-      - xnu/ipados-fixes/**
+      - ipados/patches/**
   workflow_dispatch:
 
 concurrency:
@@ -87,11 +87,6 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 120
     steps:
-      - name: Checkout local integration fixes
-        uses: actions/checkout@v4
-        with:
-          path: integration
-          persist-credentials: false
       - name: Checkout pinned port sources
         uses: actions/checkout@v4
         with:
@@ -111,8 +106,6 @@ jobs:
           git -C dxb fetch -q --depth 1 "$DXB_REPO" "$DXB_SHA"
           git -C dxb checkout -q FETCH_HEAD
           cp port/xnu/patches/*.patch port/xnu/patches/*.sh dxb/patches/
-          cp integration/xnu/ipados-fixes/0084-nabu-surface-probe-fallback.patch dxb/patches/
-          test -s dxb/patches/0084-nabu-surface-probe-fallback.patch
           cp fixes/ipados/patches/*.patch dxb/patches/
           sed -i '' 's/ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"/ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64"/' dxb/build.sh
           grep -q 'VALID_ARCHS="x86_64 arm64e arm64"' dxb/build.sh
