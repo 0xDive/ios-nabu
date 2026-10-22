@@ -71,3 +71,39 @@ from the user's legitimately obtained iPadOS 16.6.1 (20G81) iPad7,3 IPSW.
 These Apple artifacts are not distributed by this repository. The root image
 building step is independent of XNU + shim CI and needs Linux with apfs-fuse,
 hfsprogs, rsync and sufficient free disk space.
+
+
+## Same-device boot.img inspection and v3 limitation (2026-10-22)
+
+An uploaded Xiaomi Pad 5 boot-partition dump (128 MiB) was inspected **locally**
+without sending the original boot image to GitHub. It is a TWRP recovery boot
+image with Android boot header **v3**, not a v2 boot image. It contains a gzip
+ARM64 kernel, a gzip TWRP ramdisk and an AVB footer, but **no embedded FDT**.
+Firmware variants for the Novatek NT36523 touchscreen were identified in the
+ramdisk. The original 128 MiB dump and proprietary files are kept out of git.
+
+The v2-only `ipados/assemble-boot.sh` deliberately rejects this dump. To
+obtain board-specific FDT on the actual device, read
+`/sys/firmware/fdt` from a *temporarily booted recovery*, or supply a matching
+`vendor_boot.img` for offline FDT extraction. Do not substitute DTBs from
+unrelated Xiaomi devices.
+
+**Important:** AOSP boot header v3 bootloaders concatenate the vendor ramdisk
+**before** the boot.img generic ramdisk. Current `shim/loader.c` expects the
+`NABUXNU\0` payload magic at the very first byte of
+`/chosen/linux,initrd-start`, so merely rewrapping the successful payload as
+a v3 boot image is **not** a working iPadOS boot solution. The loader would
+have to safely locate and validate the payload inside the concatenated region
+before a v3 XNU test can be considered.
+
+A separate small **diagnostic-only** Android v3 image was locally constructed
+from the verified compiled `shim` Image and a tiny empty gzip CPIO; it does
+not contain an XNU payload or bootable iPadOS root. Its acceptance by nabu ABL
+has **not** been observed yet. It is intended only for temporary `fastboot
+boot` hardware diagnostics and must never be flashed.
+
+Latest green CI (shim, XNU, payload) after removing a duplicated fix:
+https://github.com/0xDive/ios-nabu/actions/runs/39735268226
+
+Do not boot XNU against Android `userdata`; `rd=ufsroot0 ufsrw=1 rootrw=1`
+expects a separately prepared writable HFS+ iPadOS root.
